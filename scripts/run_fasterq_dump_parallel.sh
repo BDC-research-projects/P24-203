@@ -9,7 +9,7 @@
 #$ -m bea
 #$ -pe mpi 8
 
-# Usage: run_fastq_dump_parallel.sh <SRR_FILE> <OUTPUT_DIR> <NUM_THREADS>
+# Usage: run_fasterq_dump_parallel.sh <SRR_FILE> <OUTPUT_DIR> <NUM_THREADS>
 
 srr_file=$1
 out_dir=$2
@@ -46,7 +46,7 @@ process_srr() {
     fi
 
     # Run fastq-dump into temporary directory
-    singularity exec -B /medstore:/medstore "$sif" fastq-dump --split-files --outdir "$out_dir" "$srr_id"
+    singularity exec -B /medstore:/medstore "$sif" fasterq-dump --split-files --include-technical --outdir "$out_dir" "$srr_id"
 
 
     # Compress with pigz
