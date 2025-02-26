@@ -25,6 +25,7 @@ library(scuttle)
 library(here)
 library(readr)
 library(scLink)
+library(SAVER)
 ```
 
 # Functions
@@ -676,6 +677,11 @@ ggsave(here("img/all_cells_plot.png"), all_cells)
 
 ```{r message=FALSE, warning=FALSE} 
 # Get cell type identities
+joined_seurat <- readRDS(here("data/joined_seurat_integrated.rds"))
+all_results <- readRDS(here("data/cell_anno_results.rds"))
+
+all_new.labels <- colnames(all_results)[max.col(all_results)]
+joined_seurat$predicted_cell_type <- all_new.labels
 Idents(joined_seurat) <- "predicted_cell_type"  # Replace with the correct metadata column for clusters
 
 # Function to compute percentages per cell type
@@ -705,6 +711,7 @@ get_overlap_by_cluster <- function(seurat_obj, gene1, gene2) {
 overlap_results <- get_overlap_by_cluster(joined_seurat, "Gfral", "Adcyap1")
 print(overlap_results)
 
+saveRDS(overlap_results, here("data/overlap_expr_all_cells.rds"))
 ```
 
 # Subset to keep annotated neurons
@@ -772,16 +779,62 @@ adcyap1_cells <- WhichCells(neuron_seurat, expression = Adcyap1 > 0)
 
 print(ft1)
 print(ft2)
-ggsave(here("img/expression_gfral_adcyap1_neurons.png"), ft1)
-ggsave(here("img/Co-expression_gfral_adcyap1_neurons.png"), ft2)
+ggsave(here("img/expression_gfral_adcyap1_neurons.png"), plot = ft1, width = 10, height = 6, dpi = 300)
+ggsave(here("img/Co-expression_gfral_adcyap1_neurons.png"), plot = ft2, width = 20, height = 12, dpi = 600)
 ```
 
 # Check AP/NTS annotation in neurons
-```{r}
-DimPlot(neuron_seurat, group.by = "AP_NTS_Cluster_Annotation", label = TRUE, repel = TRUE) + 
-  ggtitle("Neuron AP or NTS")
-```
 
+```{r}
+ap_markers <- read.csv("~/Git/P24-203/doc/marker_genes_AP.csv", header = TRUE, stringsAsFactors = FALSE)
+nts_markers <- read.csv("~/Git/P24-203/doc/marker_genes_NTS.csv", header = TRUE, stringsAsFactors = FALSE)
+
+ap_markers <- ap_markers %>% filter(log2_fold.change > 1)
+nts_markers <- nts_markers %>% filter(log2_fold.change > 1)
+# Ensure the marker genes are present in your dataset
+ap_markers <- intersect(unlist(ap_markers$gene), rownames(neuron_seurat@assays$RNA))
+nts_markers <- intersect(unlist(nts_markers$gene), rownames(neuron_seurat@assays$RNA))
+
+region_markers <- list(ap_markers, nts_markers)
+names(region_markers) <- c("AP", "NTS")
+all.sets <- lapply(names(region_markers), function(x) {
+    GeneSet(region_markers[[x]], setName=x)        
+})
+all.sets <- GeneSetCollection(all.sets)
+
+sce <- readRDS(here("data/sce_neuron.rds"))
+
+rankings <- AUCell_buildRankings(counts(sce),
+    plotStats=FALSE, verbose=FALSE)
+gc()
+cell.aucs <- AUCell_calcAUC(all.sets, rankings)
+
+results <- t(assay(cell.aucs))
+head(results)
+
+new.labels <- colnames(results)[max.col(results)]
+tab <- table(new.labels, sce$seurat_clusters)
+
+# Plot to see the distribution of AUCs across cells for each label
+
+plot_grid(AUCell_exploreThresholds(cell.aucs[1], plotHist=TRUE, assign=TRUE), 
+          AUCell_exploreThresholds(cell.aucs[2], plotHist=TRUE, assign=TRUE))
+
+
+
+```
+# Plot cluster annotation
+```{r message=FALSE, warning=FALSE}
+
+neuron_seurat$AP_NTS_Cluster_Annotation <- new.labels
+
+# Plot with predicted cell types
+options(ggrepel.max.overlaps = Inf)
+all_cells <- DimPlot(neuron_seurat, group.by = "AP_NTS_Cluster_Annotation", label = TRUE, repel = TRUE) + 
+  ggtitle("Predicted brain region (AP/NTS)")
+print(all_cells)
+ggsave(here("img/AP_NTS_neuron_cells_plot.png"), all_cells)
+```
 # Re-annotate neuron clusters
 ```{r message=FALSE, warning=FALSE}
 # Create SingleCellExperiment object
@@ -855,7 +908,7 @@ neuron_seurat <- SetIdent(neuron_seurat, value = "RNA_snn_res.0.8")
 neuron_ann <- DimPlot(neuron_seurat, group.by = "neuron_cell_type", label = TRUE, repel = TRUE) + 
   ggtitle("Predicted Neuron Cell Type Annotations")
 print(neuron_ann)
-ggsave(here("img/neuron_anno_clusters.png"), neuron_ann)
+ggsave(here("img/neuron_anno_clusters.png"), plot = neuron_ann, width = 10, height = 6, dpi = 300)
 ```
 
 ```{r}
@@ -864,6 +917,7 @@ Idents(neuron_seurat) <- "neuron_cell_type"
 overlap_results <- get_overlap_by_cluster(neuron_seurat, "Gfral", "Adcyap1")
 print(overlap_results)
 ```
+
 # Look at the Pearson and Spearman coeffcients for co-expression Gfral/Adcyap1
 ```{r message=FALSE, warning=FALSE}
 # Extract expression values for two genes
@@ -919,6 +973,9 @@ print(correlation_results)
 ```{r message=FALSE, warning=FALSE}
 #saveRDS(expr_matrix_all, here("data/expr_matrix_all.rds"))
 #saveRDS(neuron_seurat, here("data/neuron_seurat_2.rds"))
+neuron_seurat <- readRDS(here("data/neuron_seurat_2.rds"))
+expr_matrix_all <- readRDS(here("data/expr_matrix_all.rds"))
+
 count <- t(expr_matrix_all)
 genes <- c("Gfral","Adcyap1","Glp1r","Gpc3")
 
@@ -944,7 +1001,7 @@ names(net1)
 Idents(neuron_seurat) <- "predicted_cell_type"  # Replace with your clustering column name
 
 # Subset the Seurat object to include only "Glu4" cells
-glu4_seurat <- subset(neuron_seurat, idents = "Glu5")
+glu4_seurat <- subset(neuron_seurat, idents = "Glu4")
 
 glu4_data_layers <- grep("^data\\.", Layers(glu4_seurat[["RNA"]]), value = TRUE)
 # Extract expression data from all layers and combine
@@ -980,7 +1037,7 @@ networks$cor[1:4,1:4]
 
 process_neuron_cell_type <- function(neuron_seurat, cell_type, genes) {
   # Ensure the active identity class is set to the clustering result
-  Idents(neuron_seurat) <- "neuron_cell_type"  # Replace with your clustering column name
+  Idents(neuron_seurat) <- "neuron_cell_type"  
   
   # Subset the Seurat object to include the specified neuron cell type
   neuron_seurat_subset <- subset(neuron_seurat, idents = cell_type)
@@ -1027,6 +1084,7 @@ process_neuron_cell_type <- function(neuron_seurat, cell_type, genes) {
   # Merge all extracted expression matrices (column-wise: cells are in columns)
   expr_matrix <- do.call(cbind, expr_list)
   
+  # Transpose
   count <- t(expr_matrix)
   
   # Normalize counts
@@ -1050,15 +1108,15 @@ process_neuron_cell_type <- function(neuron_seurat, cell_type, genes) {
 }
 
 # Loop over all neuron cell types
-results <- lapply(neuron_cell_types, function(cell_type) {
+results <- lapply(neuron_types, function(cell_type) {
   cat("Processing cell type:", cell_type, "\n")
   process_neuron_cell_type(neuron_seurat, cell_type, genes)
 })
 
 # Optionally, name the results for easy identification
-names(results) <- neuron_cell_types
+names(results) <- neuron_types
 
-
+saveRDS(results,"neuron_res.rds")
 # Initialize a data frame to hold co-expression values
 co_expression_values <- data.frame(CellType = character(), CoExpression = numeric(), stringsAsFactors = FALSE)
 
@@ -1078,6 +1136,7 @@ for (cell_type in names(results)) {
 }
 
 ```
+
 # Plot co-expression values for Gfral/Adcyap1 per cell type 
 ```{r message=FALSE, warning=FALSE}
 # Extract Adcyap1 correlation values from the Gfral row
@@ -1101,16 +1160,36 @@ p <- pheatmap(
   cluster_cols = TRUE,   # Cluster cell types
   color = colorRampPalette(c("blue", "white", "red"))(100),
   main = "Gfral-Adcyap1 Co-expression Across Cell Types",
-  na_col = "gray"  # Optionally mark NA values in gray instead of replacing with 0
+  na_col = "gray", 
+  angle_col = 45,
+  cellheight = 60
+  
 )
-print(p)
+
 ggsave(here("img/heatmap_cluster_coexp.png"), p)
 ```
+
 # Print co-expression values for only Glu4 cluster
 ```{r message=FALSE, warning=FALSE}
 p_glu4 <- pheatmap(results[["Glu4"]])
-print(p)
+print(p_glu4)
 ggsave(here("img/heatmap_glu4_cluster.png"),p_glu4)
+```
+
+# Check how many cells from Glu4 overlap with AP
+```{r}
+# Count total cells in Glu4
+total_glu4 <- sum(neuron_seurat$neuron_cell_type == "Glu4")
+
+# Count overlapping cells (cells that are both Glu4 and AP)
+overlapping_cells <- sum(neuron_seurat$neuron_cell_type == "Glu4" & neuron_seurat$AP_NTS_Cluster_Annotation == "AP")
+
+# Compute percentage of Glu4 cells that overlap with AP
+percentage_overlap <- (overlapping_cells / total_glu4) * 100
+
+# Print result
+print(paste("Percentage of Glu4 cells that are also AP:", round(percentage_overlap, 2), "%"))
+
 ```
 
 # Session Info
@@ -1119,4 +1198,44 @@ ggsave(here("img/heatmap_glu4_cluster.png"),p_glu4)
 sessionInfo()
 ```
 </details>
+
+# Running SAVER to confirm the results
+```{r}
+
+sce <- readRDS(here("data/sce_neuron.rds"))
+
+# Identify cells with "Glu" in their annotation
+glu_cells <- grepl("^Glu", sce$predicted_cell_type)
+
+# Subset the SingleCellExperiment object
+sce_glu <- sce[, glu_cells]
+
+cl <- makeCluster(8)
+registerDoParallel(cl)
+
+#saver <- saver(sce@assays@data$counts, ncores=8, estimates.only = TRUE)
+
+genes <- c("Gfral","Adcyap1","Glp1r","Gpc3")
+genes.ind <- which(rownames(sce_glu@assays@data$counts) %in% genes)
+
+# Generate predictions for those genes and only those
+
+saver.genes.only <- saver(sce_glu@assays@data$counts, pred.genes = genes.ind, 
+                                 pred.genes.only = TRUE)
+
+
+# Run cor.genes() on the two genes
+saver.cor.gene <- cor.genes(saver.genes.only)
+saver1.cor.cell <- cor.cells(saver.genes.only)
+
+# Assuming 'gene_list' is your list of genes# Replace with your actual gene names
+
+# Filter the SingleCellExperiment object for the specified genes
+sce_filtered <- sce[rownames(sce) %in% genes]
+# Normalize the filtered data
+sce_filtered <- scran::normalize(sce_filtered)
+
+
+```
+
 

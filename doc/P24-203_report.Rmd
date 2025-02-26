@@ -36,13 +36,13 @@ This project is aiming to analyse public sequencing data, specifically snRNA seq
 
 * The GSE166649 data set from Ludwig et al. (2021) consists of 20 snRNA-seq samples, split into 50 files. Prepped with Chromium 10X 3' v2. Some are sequenced on NextSeq and are split into four files, while other samples are sequenced on NovaSeq and split into two files. Based on the file names I assume the samples come from different batches collected during a period of about five-six months. 
 
-* The GSE206144 data set from Ilanges et al. (2022) consists of six sample, of which three are cell hashing libraries (HTO) and the rest are transcriptomics libraries. Library prep used was 10X Chromium v3. 
+* The GSE206144 data set from Ilanges et al. (2022) consists of six sample, of which three are cell hashing libraries (HTO) and the rest are transcriptomics libraries. Library prep used was 10X Chromium v3. They didn't report what antibody hashtags was used for the samples, making it impossible (?) to make use of the HTO libraries for demultiplexing.
 
 ## Data processing 
 
 ### Pre-processing
 
-All sampels were downloaded and pre-processed using the pipeline nf-core/scrnaseq v.2.7.1](https://nf-co.re/scrnaseq/2.7.1/) running with cellranger v 8.0.0. 
+All sampels were downloaded and pre-processed using the pipeline [nf-core/scrnaseq v.2.7.1](https://nf-co.re/scrnaseq/2.7.1/) running with cellranger v 8.0.0. 
 
 ### QC
 
@@ -50,7 +50,7 @@ After looking at the multiqc report, I could conclude that:
 
 * Most samples only had roughly half of the expected number of cells (or I misunderstood the authors when they wrote “9,000 nuclei were used for snRNA-seq and snATAC–seq“, I took it as they have used 9,000 nuclei for the snRNA-seq and 9,000 nuclei for the snATAC-seq. Perhaps they meant 9,000 nuclei in total were used for BOTH snRNA-seq and snATAC-seq. Then the number of cells are as approximately as expected for the majority of samples).
 
-* Around 80-90% of the reads are mapped, with around 30-50% mapping to exonic regions. This is expected since we’re working with single-nuclei data and typically therefore see a high percentage of reads coming from unspliced transcripts which align to introns. 
+* Around 80-90% of the reads are mapped, with around 30-100% mapping to exonic regions. This is expected since we’re working with single-nuclei data and typically therefore see a high percentage of reads coming from unspliced transcripts which align to introns. 
 
 * The median number of genes per cell is 500-1,500, which is fine. The saturation plot suggests that some samples are under sequenced, and we might be missing some lowly expressed genes in there.  
 
@@ -73,7 +73,7 @@ After all QC and filtering there were in total 98,428 cells left.
 
 ### Data integration 
 
-The two datasets were integrated using Harmony. 
+Due to large differences between (and within) the datasets, it's not surprising that the origin of datasets would have a large impact on clustering. To remove this influence from the cell embeddings the two datasets were integrated using [Harmony](https://cran.r-project.org/web/packages/harmony/index.html). The integration mixed the datasets together to mitigate this bias. 
 
 ```{r, echo=FALSE, out.width="50%", fig.show= "hold", fig.cap="Clustering colored by study before integration (left) and after integration (right)."}
 knitr::include_graphics("img/before_integration.png")
@@ -82,45 +82,81 @@ knitr::include_graphics("img/after_integration.png")
 
 ## Cell type annotation
 
+Before anntation cluster was done using Seurat with resolution 0.8. 
+
 Annotation was done using gene marker list from the Ludwig et al. (2022) paper and the R-package [AUCell](https://bioconductor.org/packages/release/bioc/html/AUCell.html).This method ranks genes by their expression values within each cell and constructs a response curve of the number of genes from each marker set that are present with increasing rank. It then computes the area under the curve (AUC) for each marker set, quantifying the enrichment of those markers among the most highly expressed genes in that cell. This is roughly similar to performing a Wilcoxon rank sum test between genes in and outside of the set, but involving only the top ranking genes by expression in each cell.
 
-### AP vs NTS
-First, I used the gene marker lists for NTS and AP from Ludwig et al. to try to annotate the cells that come from AP and the ones from NTS. However, 
 
 ### All cell types
-Secondly, I once again retrived gene marker lists from cell types from ... and annotated all subtypes (non neuronal and neuronal). 
+I retrived gene marker lists from the cell types from Ludwig et al. and annotated all sub types (non neuronal and neuronal) with AUCell. 
+
+```{r, echo=FALSE, out.width="150%", fig.show= "hold", fig.cap="Clustering colored by cell types"}
+knitr::include_graphics("img/all_cells_plot.png")
+```
 
 ### Neuronal cell types
-I proceeded with subsetting only the neuronal cell types and proceed with further exploring the gene expressions values in these cells. After subsetting, there was 52,945 neuronal cells left.
+I proceeded with subsetting only the neuronal cell types and proceed with further exploring the gene expressions values in these cells. After subsetting, there was 64,756 neuronal cells left.
+
+```{r, echo=FALSE, out.width="100%", fig.show= "hold", fig.cap="Clustering colored by neuronal cell types"}
+knitr::include_graphics("img/neuron_anno_clusters.png")
+```
+
+Looking at the sample origin of the cells in each cluster we can see that most clusters consist of a mix of pretty much all samples.There are however a few potentially problematic clusters with just a few samples represented. The pristine samples from the second smaller dataset make up all cells in three clusters. They may represent rare but biologically meaningful populations and should be retained. 
+
+```{r, echo=FALSE, out.width="100%", fig.show= "hold", fig.cap="Sample origin cell cluster compostion"}
+knitr::include_graphics("img/neuron_cluster_comp.png")
+```
+
+### AP vs NTS
+First, I used the gene marker lists for NTS and AP from Ludwig et al. to try to annotate the cells that come from AP and the ones from NTS. I reduced the lists (both containing 1000 genes) to only contain genes with log2 fold change > 1 which also overlapped in the seurat object. I was left with 766 genes for AP and 660 genes for NTS. Perhaps not surprisingly, given that most cell types were annotated as NTS by Ludwig et al., we see that most cells here are annotated as NTS as well. There are a few clusters of AP cells enriched, which fairly well corresponds to the cell types found by the authors (Glu4, GABA5 and GABA7 in particular). Since they didn't report any marker genes for DMV that region couldn't be predicted, but the chat-types do cluster separately as expected. 
+
+```{r, echo=FALSE, out.width="100%", fig.show= "hold", fig.cap="Clustering colored by brain region of interest (AP or NTS)."}
+knitr::include_graphics("img/AP_NTS_neuron_cells_plot.png")
+```
 
 # Results
 
 ## Expression analysis
 
-## Co-expression Gfral/Adcyap1
+Overall percentage of cells expressing Gfral is 0.91 %, and Adcyap1 is 7.05 %. In total, 0.07 % of cells expressed both (around 70 cells). The cluster with the highest expression of both genes is Glu4 (1.15 %), followed by Glu5 (0.72 %). 
 
-## Comparing with online resources
+```{r, echo=FALSE}
+results <- readRDS("../data/overlap_expr_all_cells.rds")
+knitr::kable(results, caption = "Percentage of cells expressing one or both genes per cluster" )
+```
 
+Gfral is mostly expressed in Glu4 and Glu5, whereas Adcyap1 show expression in multiple clusters, most notably chat1, chat3 and several glutamatergic cell types (Glu1, Glu3, Glu5, Glu6 and Glu7). In the Glu4 cluster, 6.3% of cells express Adcyap1. 
 
+```{r, echo=FALSE, out.width="150%", fig.show= "hold", fig.cap="Co-expression patterns for Gfral and Adcyap1 in neurons."}
+knitr::include_graphics("img/Co-expression_gfral_adcyap1_neurons.png")
+```
 
+## Co-expression per cell type
+
+I used scLink to infer functional gene co-expression networks for Gfral and Adcyap1, and also including genes shown to have been co-expressed with these genes. Looking at the co-expression values for Gfral/Adcyap1 in all neurons, the results indicate a high level of co-expression between the two (scLink's correlation = 0.82). Looking closer at the co-expression values per cluster type revealed that the co-expression is limited to the Glu4 cells (scLink's correlation = 0.84). 
+
+```{r, echo=FALSE, out.width="100%", fig.show= "hold", fig.cap="Heatmap of co-expression correlation values for Gfral/Adcyap1 per cluster from scLink"}
+knitr::include_graphics("img/Screenshot 2025-02-26 at 20.38.52.png")
+```
+
+## Glu4
+A closer look at the Glu4 cluster show the co-expression with Adcyap1 as well as confirm that Gfral is co-expressed with Glp1r as expected (reported by Ludwig et al.). 
+
+```{r, echo=FALSE, out.width="100%", fig.show= "hold", out.extra='style="margin: 0; padding: 0;"', fig.cap="Heatmap of co-expression correlation values in the Glu4 cluster from scLink"}
+knitr::include_graphics("img/heatmap_glu4_cluster.png")
+```
+
+Percentage of Glu4 cells that are also annotated as AP is 25.7 %. This is higher compared to clusters which we expect to be NTS, for instance for the neighboring Glu5 cluster the value of AP cells is just around 1 %. 
 
 # Discussion
-Having such quantity and quality differences in the two datasets can lead to several potential implications. In terms of batch effects and technical bias, harmony does seem to do a pretty good job of balancing cell composition in the clusters. Only one or two clusters have the high-quality samples
+Gfral is a lowly expressed gene and this presents challenges, including increased noise and variability in the data, which may obscure true biological signals. The correlation between Gfral and Adcyap1 may be less reliable due to the limited number of expressing cells, potentially leading to biased interpretations. Despite these challenges, focusing on the Glu4 cluster where 16 % of cells expressed Gfral allows for a more meaningful analysis of Gfral's role, emphasizing the need for careful consideration of expression patterns and statistical methods to accurately assess biological relevance. Also since many samples appeared to be under-sequenced, it may be that we're not capturing Gfral expression as good as we could with deep sequencing. 
 
-The cell type annotation didn't yield the prettiest clusters the world have seen. I noticed that in some clusters there's a lack of clear bimodality for the corresponding label, which indicate that its gene set is not sufficiently informative. The advantage of the AUCell approach is that it does not require reference expression values. This is particularly useful when dealing with gene sets derived from the literature like we did here or other qualitative forms of biological knowledge. The disadvantage is that information on relative expression is lost when only the marker identities are used. The net effect of ignoring expression values is difficult to predict; for example, it may reduce performance for resolving more subtle cell types, but may also improve performance if the per-cell expression was too noisy to be useful. Performance is also highly dependent on the gene sets themselves.
+There is a clear problem with expression analysis in scRNA-seq caused by sparse data and over-dispersion of counts, leading to conventional methods like Pearson and Spearman’s correlation coefficients not providing an efficient approach to representing and interpreting gene associations. The field is advancing rapidly and there are now multiple R-packages available which are made to account for the problems with scRNA-seq data. I proceeded with using [scLink](https://cran.r-project.org/web/packages/scLink/index.html), a library designed for scRNA-seq data which calculate the correlation between gene pairs and then use a method to learn sparse dependencies between genes to construct sparse gene co-expression networks. It would be useful to test other packages as well to see if the results can be validated. 
 
-There is a clear problem with expression analysis in scRNA-seq caused by sparse data and over-dispersion of counts, leading to conventional Pearson and Spearman’s correlation coefficients not providing an efficient approach to representing and interpreting gene associations. At first glance, only looking at the Spearman or Pearman coefficient couldn't confirmed any significant level of co-expression in any cluster. However, in general these statistics do not perform well for scRNA-seq data, rather they can serve as a first initial exploratory analysis. The field is advancing rapidly and there are now multiple R-packages available which are made to account for the problems with scRNA-seq data. I proceeded with using [scLink](https://cran.r-project.org/web/packages/scLink/index.html), a library designed for scRNA-seq data which calculate the correlation between gene pairs and then use a method to learn sparse dependencies between genes to construct sparse gene co-expression networks.
-
-One finding here which I find confusing looking at the Ludwig et al. paper is that they characterize two clusters with Gfral expression; Glu4 in the AP (expressing Gfral and Glp1r) and Glu5 in the NTS (only expressing Gfral). In this analysis, both the Glu5 and Glu4 cluster maps to NTS, not AP. This discrepancy might be due to a lazy annotation of NTS vs AP (and/or the neuronal subtypes) by me, and Glu4 actually should be annotated as AP. Maybe just using the markers Ludwig et al. reported isn't sufficient to reproduce their results, not even when using their data. It is a bit hard to interpret since Gfral is in the gene marker list for AP, and Adcyap1 is in the gene marker list for NTS, meaning that I used them to annotate the two different regions. That being said, just because their used here as markers doesn't mean that their expression is exclusive to that particular cell type, just enriched.
-
-I know reproducing single-cell RNA-seq results can be influenced by differences in pre-processing, clustering, and annotation strategies. I suppose variations in cell filtering, normalization, and batch correction may lead to shifts in clustering, as well as differences in UMAP parameters, PCA selection, and clustering resolution further can impact cell population definitions. In this case, I think batch effects using the additional data set, different software versions, expression thresholding, or overlapping markers can be affecting annotation consistency. 
-
-Gfral is in the gene marker list for AP, and Adcyap1 is in the gene marker list for NTS. With that said, what we can claim that Gfral is co-expressed with Adcyap1 in glutamatergic neurons with expressed noradrenergic markers. 
-
-I looked into the Allen Brain Cell Atlas to see where they have found these genes to be expressed, and there's one small cluster with very high expression of Gfral amongst mostly Glu5 & Glu3 NTS cells. Glp1r and Adcyap1 also show some overlap in expression there, so this isn't consistent with Ludwig et al either. I'm not sure what to make of this. 
+The cell type annotation didn't yield the prettiest clusters the world has seen. I noticed that in some clusters there's a lack of clear bimodality for the corresponding label, which indicate that its gene set is not sufficiently informative. The advantage of the AUCell approach is that it does not require reference expression values, which is useful when dealing with gene sets derived from the literature like I did here. The disadvantage is that information on relative expression is lost when only the marker identities are used. The net effect of ignoring expression values is difficult to predict; for example, it may reduce performance for resolving more subtle cell types, but may also improve performance if the per-cell expression was too noisy to be useful. Still, I think reference data with gene expression information could have helped. 
 
 # Conclusion
-Gfral is mostly expressed in glutamatergic neurons, here annotated as Glu4. Adcyap1 show somewhat higher expressin in the same cluster but is also more generally expressed in other cell types as well. The co-expression analysis with scLink indicate that Gfral and Adcyap1 are highly co-expressed (scLink's correlation = 0.79). Looking at the co-expression of these two genes per cell type reveals that this significant co-expression is limited to Glu4 cells (scLink's correlation = 0.84), located in the AP according to Ludwig et al.
+Gfral is mostly expressed in glutamatergic neurons here annotated as Glu4. Adcyap1 show expression in the same cluster but is at the same time more generally expressed in other cell types. The co-expression analysis with scLink indicate that Gfral and Adcyap1 are highly co-expressed. Looking closer at the co-expression of these two genes per cell type reveals that this significant co-expression is limited to Glu4 cells (scLink's correlation = 0.84). The Glu4 cells are located in the AP according to Ludwig et al., and here we see an enrichment for AP cells in the Glu4 cluster. Some caution is warranted in interpreting these results due low expression levels. Lowly expressed genes can still be biologically significant, but interpreting their role requires careful consideration of their expression patterns. 
 
 # Code
 
