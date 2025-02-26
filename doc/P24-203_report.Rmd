@@ -1,0 +1,139 @@
+---
+title: "P24-203"
+subtitle: "Gene expression analysis in single-nuclei RNA-seq data"
+author: "Kristina Benevides"
+date: "`r Sys.Date()`"
+output:
+  bookdown::html_document2:
+    fig_width: 12
+    fig_height: 9
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: TRUE
+      smooth_scroll: TRUE
+    code_folding: hide
+    theme: "flatly"
+    highlight: pygments
+  includes:
+    before_body: header.html
+    after_body: footer.html
+  css: style.css
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+# Introduction
+
+This project is aiming to analyse public sequencing data, specifically snRNA sequencing data. We aim to investigate whether two different genes (GFRAL and Adcyap1) are expressed in the same cells or not from an area of the brain called dorsal vagal complex (DVC), which is mainly formed by two regions, the area postrema (AP) and the nucleus of the tractus solitarii (NTS).
+
+# Methods
+
+## The Data
+
+* The GSE166649 data set from Ludwig et al. (2021) consists of 20 snRNA-seq samples, split into 50 files. Prepped with Chromium 10X 3' v2. Some are sequenced on NextSeq and are split into four files, while other samples are sequenced on NovaSeq and split into two files. Based on the file names I assume the samples come from different batches collected during a period of about five-six months. 
+
+* The GSE206144 data set from Ilanges et al. (2022) consists of six sample, of which three are cell hashing libraries (HTO) and the rest are transcriptomics libraries. Library prep used was 10X Chromium v3. 
+
+## Data processing 
+
+### Pre-processing
+
+All sampels were downloaded and pre-processed using the pipeline nf-core/scrnaseq v.2.7.1](https://nf-co.re/scrnaseq/2.7.1/) running with cellranger v 8.0.0. 
+
+### QC
+
+After looking at the multiqc report, I could conclude that: 
+
+* Most samples only had roughly half of the expected number of cells (or I misunderstood the authors when they wrote “9,000 nuclei were used for snRNA-seq and snATAC–seq“, I took it as they have used 9,000 nuclei for the snRNA-seq and 9,000 nuclei for the snATAC-seq. Perhaps they meant 9,000 nuclei in total were used for BOTH snRNA-seq and snATAC-seq. Then the number of cells are as approximately as expected for the majority of samples).
+
+* Around 80-90% of the reads are mapped, with around 30-50% mapping to exonic regions. This is expected since we’re working with single-nuclei data and typically therefore see a high percentage of reads coming from unspliced transcripts which align to introns. 
+
+* The median number of genes per cell is 500-1,500, which is fine. The saturation plot suggests that some samples are under sequenced, and we might be missing some lowly expressed genes in there.  
+
+* The barcode knee plot indicate high contamination of ambient RNA (according to 10X). Since there’re no clear cliffs in the plots, just removing empty empty droplets based on a hard UMI threshold probably isn’t sufficient. Using tools like CellBender, SoupX or DecontX are to prefer since they can model the data when proven difficult to distinguish empty droplets from cell-containing ones.The two samples from GSE206144 have notably better quality than the samples from GSE166649, and those two samples actually wouldn't need ambient RNA removal but I will include them as well to be consistent. 
+
+### Ambient RNA removal
+
+In droplet-based single-cell RNA sequencing, some background (ambient) mRNA is always present in the solution. This mRNA can end up in the droplets along with the cells and get sequenced. As a result, some of the detected gene expression comes from the surrounding solution rather than the cell inside the droplet. SoupX was used to remove the ambient RNA. I investigated the change in expression due to this correction for our genes of interest (Fig 2.1). It shows the fraction of expression in each cell that has been deemed to be soup and removed. Please note that the figures are just examples from ONE sample, and this was done for all 22 samples. As you can see for Adcyap1, the expression in some clusters have been heavily decreased. The interpretation of cell expression can change a lot after contamination correction. 
+
+```{r, echo=FALSE, out.width="50%", fig.show= "hold", fig.cap="Change in expression values after ambient RNA removal for Adcyap1 (left) and Gfral (right) for one sample"}
+knitr::include_graphics("img/7W_Adcyap1_ChangeMap.png")
+knitr::include_graphics("img/7W_Gfral_ChangeMap.png")
+```
+
+### Doublet removal
+
+To filter out doublets I used [DoubletFinder](https://github.com/chris-mcginnis-ucsf/DoubletFinder) DoubletFinder identifies false-negative Demuxlet classifications caused by doublets formed from cells with identical SNP profiles. DoubletFinder is sensitive to heterotypic doublets i.e., doublets formed from transcriptionally-distinct cell states, but is insensitive to homotypic doublets, i.e. doublets formed from transcriptionally-similar cell states.
+
+After all QC and filtering there were in total 98,428 cells left. 
+
+### Data integration 
+
+The two datasets were integrated using Harmony. 
+
+```{r, echo=FALSE, out.width="50%", fig.show= "hold", fig.cap="Clustering colored by study before integration (left) and after integration (right)."}
+knitr::include_graphics("img/before_integration.png")
+knitr::include_graphics("img/after_integration.png")
+```
+
+## Cell type annotation
+
+Annotation was done using gene marker list from the Ludwig et al. (2022) paper and the R-package [AUCell](https://bioconductor.org/packages/release/bioc/html/AUCell.html).This method ranks genes by their expression values within each cell and constructs a response curve of the number of genes from each marker set that are present with increasing rank. It then computes the area under the curve (AUC) for each marker set, quantifying the enrichment of those markers among the most highly expressed genes in that cell. This is roughly similar to performing a Wilcoxon rank sum test between genes in and outside of the set, but involving only the top ranking genes by expression in each cell.
+
+### AP vs NTS
+First, I used the gene marker lists for NTS and AP from Ludwig et al. to try to annotate the cells that come from AP and the ones from NTS. However, 
+
+### All cell types
+Secondly, I once again retrived gene marker lists from cell types from ... and annotated all subtypes (non neuronal and neuronal). 
+
+### Neuronal cell types
+I proceeded with subsetting only the neuronal cell types and proceed with further exploring the gene expressions values in these cells. After subsetting, there was 52,945 neuronal cells left.
+
+# Results
+
+## Expression analysis
+
+## Co-expression Gfral/Adcyap1
+
+## Comparing with online resources
+
+
+
+
+# Discussion
+Having such quantity and quality differences in the two datasets can lead to several potential implications. In terms of batch effects and technical bias, harmony does seem to do a pretty good job of balancing cell composition in the clusters. Only one or two clusters have the high-quality samples
+
+The cell type annotation didn't yield the prettiest clusters the world have seen. I noticed that in some clusters there's a lack of clear bimodality for the corresponding label, which indicate that its gene set is not sufficiently informative. The advantage of the AUCell approach is that it does not require reference expression values. This is particularly useful when dealing with gene sets derived from the literature like we did here or other qualitative forms of biological knowledge. The disadvantage is that information on relative expression is lost when only the marker identities are used. The net effect of ignoring expression values is difficult to predict; for example, it may reduce performance for resolving more subtle cell types, but may also improve performance if the per-cell expression was too noisy to be useful. Performance is also highly dependent on the gene sets themselves.
+
+There is a clear problem with expression analysis in scRNA-seq caused by sparse data and over-dispersion of counts, leading to conventional Pearson and Spearman’s correlation coefficients not providing an efficient approach to representing and interpreting gene associations. At first glance, only looking at the Spearman or Pearman coefficient couldn't confirmed any significant level of co-expression in any cluster. However, in general these statistics do not perform well for scRNA-seq data, rather they can serve as a first initial exploratory analysis. The field is advancing rapidly and there are now multiple R-packages available which are made to account for the problems with scRNA-seq data. I proceeded with using [scLink](https://cran.r-project.org/web/packages/scLink/index.html), a library designed for scRNA-seq data which calculate the correlation between gene pairs and then use a method to learn sparse dependencies between genes to construct sparse gene co-expression networks.
+
+One finding here which I find confusing looking at the Ludwig et al. paper is that they characterize two clusters with Gfral expression; Glu4 in the AP (expressing Gfral and Glp1r) and Glu5 in the NTS (only expressing Gfral). In this analysis, both the Glu5 and Glu4 cluster maps to NTS, not AP. This discrepancy might be due to a lazy annotation of NTS vs AP (and/or the neuronal subtypes) by me, and Glu4 actually should be annotated as AP. Maybe just using the markers Ludwig et al. reported isn't sufficient to reproduce their results, not even when using their data. It is a bit hard to interpret since Gfral is in the gene marker list for AP, and Adcyap1 is in the gene marker list for NTS, meaning that I used them to annotate the two different regions. That being said, just because their used here as markers doesn't mean that their expression is exclusive to that particular cell type, just enriched.
+
+I know reproducing single-cell RNA-seq results can be influenced by differences in pre-processing, clustering, and annotation strategies. I suppose variations in cell filtering, normalization, and batch correction may lead to shifts in clustering, as well as differences in UMAP parameters, PCA selection, and clustering resolution further can impact cell population definitions. In this case, I think batch effects using the additional data set, different software versions, expression thresholding, or overlapping markers can be affecting annotation consistency. 
+
+Gfral is in the gene marker list for AP, and Adcyap1 is in the gene marker list for NTS. With that said, what we can claim that Gfral is co-expressed with Adcyap1 in glutamatergic neurons with expressed noradrenergic markers. 
+
+I looked into the Allen Brain Cell Atlas to see where they have found these genes to be expressed, and there's one small cluster with very high expression of Gfral amongst mostly Glu5 & Glu3 NTS cells. Glp1r and Adcyap1 also show some overlap in expression there, so this isn't consistent with Ludwig et al either. I'm not sure what to make of this. 
+
+# Conclusion
+Gfral is mostly expressed in glutamatergic neurons, here annotated as Glu4. Adcyap1 show somewhat higher expressin in the same cluster but is also more generally expressed in other cell types as well. The co-expression analysis with scLink indicate that Gfral and Adcyap1 are highly co-expressed (scLink's correlation = 0.79). Looking at the co-expression of these two genes per cell type reveals that this significant co-expression is limited to Glu4 cells (scLink's correlation = 0.84), located in the AP according to Ludwig et al.
+
+# Code
+
+All code is available on GitHub at [BDC-research-projects/P24-203](https://github.com/BDC-research-projects/P24-203).
+
+# References and resources
+Articles, books and tutorials I've used for this project:
+
+* Ludwig, M.Q., Cheng, W., Gordian, D. et al. A genetic map of the mouse dorsal vagal complex and its role in obesity. Nat Metab 3, 530–545 (2021). https://doi.org/10.1038/s42255-021-00363-1
+* Ilanges, A., Shiao, R., Shaked, J. et al. Brainstem ADCYAP1+ neurons control multiple aspects of sickness behaviour. Nature 609, 761–771 (2022). https://doi.org/10.1038/s41586-022-05161-7
+* Allen Reference Atlas – Mouse Brain [brain atlas]. Available from atlas.brain-map.org.
+
+* [Advanced Single-Cell Analysis with Bioconductor](https://bioconductor.org/books/3.14/OSCA.advanced/index.html)
+* [Analysis of single cell RNA-seq data](https://www.singlecellcourse.org/index.html)
+* [Basics of Single-Cell Analysis with Bioconductor](https://bioconductor.org/books/3.13/OSCA.basic/)
+* [SoupX Tutorial](https://cran.r-project.org/web/packages/SoupX/vignettes/pbmcTutorial.html)

@@ -1,0 +1,698 @@
+---
+title: "snRNA-seq QC and pre-processing"
+author: "Kristina Benevides"
+date: "2024-12-11"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(Seurat)
+library(DoubletFinder)
+library(ggplot2)
+library(dplyr)
+library(here)
+library(tidyverse)
+library(parallelDist)
+library(doParallel)
+library(scran)
+library(GSEABase)
+library(AUCell)
+source("/home/xbenkx/Git/P24-203/scripts/compute_sil.R")
+```
+
+# Load data
+```{r}
+data.directory <- "data/count/"
+```
+
+# Create Seurat object
+```{r}
+
+names = c("181015_21V", "181015_22S", "181217_APn1_6V", "181217_APn1_12W",
+          "181217_APn1_19S","181228_AP-rna-gradient_14V", 
+          "181228_AP-rna-gradient_20W", "181228_AP-rna-gradient_27W",
+          "181228_AP-rna-gradient_31S", "181228_AP-rna-gradient_36S",
+          "181228_AP-rna-wash_9V", "181228_AP-rna-wash_16W", "181228_AP-rna-wash_26S",
+          "190222_7W", "190222_37W", "190222_34W", "190222_39S", 
+          "190222_40S", "190222_23V", "190222_25V") 
+
+suffix = c("/outs/filtered_feature_bc_matrix")
+
+sample <- gsub(".*_", "", names)
+metadata = c() 
+
+for (i in 1:length(names)){
+
+  data.path = paste(paste(data.directory, sample[i], sep = ""), suffix, sep = "") 
+  data = Read10X(data.path)
+  colnames(data) = paste(sample[i], colnames(data), sep = "_")
+
+  metadata = c(metadata, rep(sample[i], ncol(data)))
+  
+  if (i == 1) {
+    AP.data = data
+  } 
+  else {
+    AP.data = cbind(AP.data, data)
+  }
+}
+
+metadata = data.frame(metadata)
+colnames(metadata) = "sample"
+rownames(metadata) = colnames(AP.data)
+
+AP <- CreateSeuratObject(counts = AP.data, meta.data = metadata)
+rownames(AP@assays$RNA@layers$counts) <- rownames(AP@assays$RNA)
+
+mito.genes <- grep(pattern = "^mt-", x = rownames(AP@assays$RNA), value = TRUE)
+percent.mito <- Matrix::colSums(AP@assays$RNA@layers$counts[mito.genes,])/Matrix::colSums(AP@assays$RNA@layers$counts)
+
+ribo.genes <- grep(pattern = "^Rp", x = rownames(AP@assays$RNA), value = TRUE)
+percent.ribo <- Matrix::colSums(AP@assays$RNA@layers$counts[ribo.genes,])/Matrix::colSums(AP@assays$RNA@layers$counts)
+
+# Save data to the Seurat object
+mito.ribo = as.data.frame(cbind(percent.mito, percent.ribo))
+colnames(mito.ribo) = c("percent.mito", "percent.ribo")
+
+AP <- AddMetaData(object = AP, metadata = mito.ribo)
+
+AP <- subset(AP, subset = percent.mito < .05)
+
+AP.list <- SplitObject(object = AP, split.by = "sample")
+
+```
+
+# Data normalization
+```{r}
+library(future)
+library(future.apply)
+plan(multisession, workers = 4) # Adjust workers based on CPU cores
+
+AP.list <- future_lapply(AP.list, function(obj) {
+  obj <- NormalizeData(object = obj, verbose = FALSE)
+  obj <- FindVariableFeatures(object = obj, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+  obj <- ScaleData(obj, vars.to.regress = "nCount_RNA", verbose = FALSE)
+  obj <- RunPCA(obj, npcs = 30, verbose = FALSE)
+  return(obj)
+})
+```
+
+# Data normalization
+```{r}
+for(i in 1:length(AP.list)) {
+  AP.list[[i]] <- NormalizeData(object = AP.list[[i]], verbose = F)
+  AP.list[[i]] <- FindVariableFeatures(object = AP.list[[i]], 
+                                       selection.method = "vst", nfeatures = 2000, 
+                                       verbose = F)
+  AP.list[[i]] <- ScaleData(AP.list[[i]], vars.to.regress = "nCount_RNA", verbose = F)
+  AP.list[[i]] <- RunPCA(AP.list[[i]], npcs = 30, verbose = F)
+}  
+saveRDS(AP.list, file = "data/AP_list.rds")
+```
+
+
+# Doublet removal
+```{r}
+
+#AP.list <- readRDS("data/AP_list.rds")
+cl <- makeCluster(8)
+registerDoParallel(cl)
+
+clusterEvalQ(cl, {
+  library(DoubletFinder)  # Load the library in each worker
+})
+
+AP.list.wodoublets <- foreach(i = 1:length(AP.list)) %dopar% {
+  tryCatch({
+    set.seed(i)
+
+    # Check if AP.list[[i]] is valid
+    if (is.null(AP.list[[i]])) stop("AP.list[[i]] is NULL")
+    
+    # pK identification
+    sweep.res.list_AP <- paramSweep(AP.list[[i]], PCs = 1:10, sct = F)
+    sweep.stats_AP <- summarizeSweep(sweep.res.list_AP, GT = F)
+    bcmvn_AP <- find.pK(sweep.stats_AP)
+    pK <- bcmvn_AP$pK[which.max(bcmvn_AP$BCmetric)]
+    pK <- as.numeric(as.character(pK))
+
+    # Doublet removal 
+    nExp_poi <- round(0.035 * ncol(AP.list[[i]]@assays$RNA))
+    AP.list[[i]] <- doubletFinder(AP.list[[i]], PCs = 1:10, pN = 0.2, pK = pK, 
+                                     nExp = nExp_poi, reuse.pANN = F, sct = F)
+    
+    colnames(AP.list[[i]]@meta.data)[7:8] <- c("pANN", "classifications")
+    AP.wodoublets <- subset(AP.list[[i]], subset = classifications == "Singlet")
+    list(AP.wodoublets)
+  }, error = function(e) {
+    message(paste("Error in task ", i, ": ", e$message))
+    return(NULL)
+  })
+}
+
+AP.list.wodoublets <- unlist(AP.list.wodoublets)
+
+names(AP.list.wodoublets) <- names(AP.list)
+
+stopCluster(cl)
+saveRDS(AP.list.wodoublets, file = "data/AP_list_wo_doublets.rds")
+```
+
+# Data integration
+```{r, message=FALSE}
+for (i in 1:length(AP.list.wodoublets)) {
+ AP.list.wodoublets[[i]] <- NormalizeData(object = AP.list.wodoublets[[i]], verbose = F)
+ AP.list.wodoublets[[i]] <- FindVariableFeatures(object = AP.list.wodoublets[[i]],
+                                                 selection.method = "vst", 
+                                                 nfeatures = 2000, verbose = F)
+}
+
+# Integration
+AP.anchors <- FindIntegrationAnchors(object.list = AP.list.wodoublets, 
+                                     dims = 1:30, anchor.features = 2000)
+saveRDS(AP.anchors, file = "data/AP_anchors.rds")
+AP <- IntegrateData(anchorset = AP.anchors, dims = 1:30)
+saveRDS(AP, file="data/AP_integrated.rds")
+```
+
+# Visualization
+```{r, warning=FALSE}
+# Run the standard workflow for visualization and clustering
+AP <- ScaleData(object = AP, verbose = F) 
+AP <- RunPCA(object = AP, npcs = 30, verbose = F)
+AP <- RunUMAP(object = AP, reduction = "pca", 
+    dims = 1:10)
+```
+
+# Clustering
+```{r, warning=FALSE}
+AP <- FindNeighbors(object = AP, reduction = "pca")
+#AP <- FindClusters(object = AP, resolution = 0.1, verbose = F)
+#AP <- FindClusters(object = AP, resolution = 0.2, verbose = F)
+AP <- FindClusters(object = AP, resolution = 0.3, verbose = F)
+
+DimPlot(AP, reduction = "umap", label = T, group.by = "integrated_snn_res.0.3") + 
+  theme(legend.position = "none") +
+  xlab("UMAP 1") + ylab("UMAP 2")
+saveRDS(AP, 
+     file = "data/AP_Seurat_obj_tmp0.rds")
+
+AP <- readRDS("data/AP_Seurat_obj_tmp0.rds")
+```
+
+# Annotate clusters 
+```{r}
+# Find cluster markers
+cluster_markers <- FindAllMarkers(AP, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+# Save the markers to a file for review
+write.csv(cluster_markers, "data/AP_cluster_markers.csv")
+
+# Load marker gene lists for AP and NTS regions
+# Replace "ap_markers.csv" and "nts_markers.csv" with the paths to your marker gene files
+ap_markers <- read.csv("doc/marker_genes_AP.csv", header = TRUE, stringsAsFactors = FALSE)
+nts_markers <- read.csv("doc/marker_genes_NTS.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# Ensure the marker genes are present in your dataset
+ap_markers <- intersect(unlist(ap_markers$gene), rownames(AP@assays$RNA))
+nts_markers <- intersect(unlist(nts_markers$gene), rownames(AP@assays$RNA))
+
+cluster_avg_expression <- AggregateExpression(AP, features = c(ap_markers, nts_markers), group.by = "seurat_clusters")$RNA
+
+ap_expression <- cluster_avg_expression[ap_markers, ]
+nts_expression <- cluster_avg_expression[nts_markers, ]
+
+ap_cluster_scores <- colMeans(ap_expression, na.rm = TRUE)
+nts_cluster_scores <- colMeans(nts_expression, na.rm = TRUE)
+
+cluster_annotations <- ifelse(ap_cluster_scores > nts_cluster_scores, "AP", "NTS")
+names(cluster_annotations) <- 0:18
+mapped_annotations <- cluster_annotations[as.character(AP$seurat_clusters)]
+names(mapped_annotations) <- rownames(AP@meta.data)  # Set names to cell IDs
+AP$Cluster_Annotation <- mapped_annotations[rownames(AP@meta.data)]
+
+# Visualization with annotations
+DimPlot(AP, reduction = "umap", group.by = "Cluster_Annotation", label = TRUE) +
+  theme(legend.position = "none") +
+  xlab("UMAP 1") + ylab("UMAP 2")
+
+FeaturePlot(AP, features = c("Gfral", "Adcyap1"), min.cutoff = "q10")
+FeaturePlot(AP, features = c("Gfral", "Adcyap1"), blend = TRUE, pt.size = 1) +
+  theme(plot.title = element_text(hjust = 0.5))
+gfral_cells <- WhichCells(AP, expression = Gfral > 0)
+adcyap1_cells <- WhichCells(AP, expression = Adcyap1 > 0)
+
+# Find cells that express both genes
+overlap_cells <- intersect(gfral_cells, adcyap1_cells)
+
+# Compute percentages
+total_cells <- length(Cells(AP))
+gfral_pct <- length(gfral_cells) / total_cells * 100
+adcyap1_pct <- length(adcyap1_cells) / total_cells * 100
+overlap_pct <- length(overlap_cells) / total_cells * 100
+
+# Print results
+cat("Percentage of cells expressing Gfral:", round(gfral_pct, 2), "%\n")
+cat("Percentage of cells expressing Adcyap1:", round(adcyap1_pct, 2), "%\n")
+cat("Percentage of cells expressing both genes:", round(overlap_pct, 2), "%\n")
+
+# Get cell type identities
+Idents(AP) <- "cell_type"  # Replace with the correct metadata column for clusters
+
+# Function to compute percentages per cell type
+get_overlap_by_cluster <- function(seurat_obj, gene1, gene2) {
+  cluster_levels <- levels(seurat_obj)
+  results <- data.frame(Cluster = character(), Gfral_pct = numeric(), Adcyap1_pct = numeric(), Both_pct = numeric())
+  
+  for (cluster in cluster_levels) {
+    cells_in_cluster <- WhichCells(seurat_obj, idents = cluster)
+    
+    gfral_cells <- WhichCells(seurat_obj, expression = !!sym(gene1) > 0)
+    adcyap1_cells <- WhichCells(seurat_obj, expression = !!sym(gene2) > 0)
+    
+    overlap_cells <- intersect(gfral_cells, adcyap1_cells)
+    
+    gfral_pct <- length(intersect(cells_in_cluster, gfral_cells)) / length(cells_in_cluster) * 100
+    adcyap1_pct <- length(intersect(cells_in_cluster, adcyap1_cells)) / length(cells_in_cluster) * 100
+    overlap_pct <- length(intersect(cells_in_cluster, overlap_cells)) / length(cells_in_cluster) * 100
+    
+    results <- rbind(results, data.frame(Cluster = cluster, Gfral_pct = gfral_pct, Adcyap1_pct = adcyap1_pct, Both_pct = overlap_pct))
+  }
+  
+  return(results)
+}
+
+# Run the function
+overlap_results <- get_overlap_by_cluster(AP, "Gfral", "Adcyap1")
+print(overlap_results)
+
+```
+
+# Annotate clusters 
+
+```{r}
+
+non_neurons <- list.files(here("data/csv/non_neurons"), pattern = "*.csv", full.names = TRUE)
+neurons <- list.files(here("data/csv/neurons"), pattern = "*.csv", full.names = TRUE)
+
+non_neuron_data <- lapply(non_neurons, read.csv)
+names(non_neuron_data) <- basename(non_neurons)
+cellex_cutoff <- 0.85
+expr_proportion_cutoff <- 10
+
+# Loop through the list and filter each data frame
+non_neuron_filtered_data <- lapply(non_neuron_data, function(df) {
+  subset(df, cellex_score >= cellex_cutoff & expr_proportion >= expr_proportion_cutoff)
+})
+
+output_dir <- "data/marker_genes"  # Directory to save the files
+dir.create(output_dir, showWarnings = FALSE)
+
+lapply(seq_along(filtered_marker_data), function(i) {
+  output_file <- file.path(output_dir, paste0("marker_genes_", names(filtered_marker_data)[i]))
+  write_csv(as.data.frame(filtered_marker_data[[i]]$gene), output_file, col_names = FALSE)
+})
+
+```
+
+# Non-neuron annotation
+
+```{r}
+# Define directory where your marker gene files are stored
+marker_dir <- "data/marker_genes"  # Update with your actual path
+neuron_marker_dir <- "data/neuron_marker_genes"
+# List all marker gene files
+marker_files <- list.files(marker_dir, pattern = "marker_genes_.*\\.csv", full.names = TRUE)
+neuron_marker_files <- list.files(neuron_marker_dir, pattern = ".*\\.csv", full.names = TRUE)
+markers <- c(marker_files,neuron_marker_files)
+# Extract cell type names from the file names
+cell_types <- gsub("marker_genes_|\\.csv", "", basename(markers))
+
+# Read marker gene lists and assign cell type names
+marker_gene_lists <- lapply(markers, function(file) {
+  data <- read.csv(file, header = TRUE, stringsAsFactors = FALSE)
+  unlist(data)  # Ensure the marker genes are a character vector
+})
+names(marker_gene_lists) <- cell_types  # Add cell type names to the list
+
+# Ensure the marker genes are present in your dataset
+filtered_marker_genes <- lapply(marker_gene_lists, function(genes) {
+  intersect(genes, rownames(AP@assays$RNA))
+})
+
+# Calculate average expression for each cell type marker list
+cluster_avg_expression <- AggregateExpression(AP, 
+                                               features = unlist(filtered_marker_genes), 
+                                               group.by = "seurat_clusters")$RNA
+
+# Calculate cluster scores for each cell type
+cluster_scores <- lapply(filtered_marker_genes, function(genes) {
+  colMeans(cluster_avg_expression[genes, ], na.rm = TRUE)
+})
+
+# Annotate clusters based on the highest score for each cell type
+cluster_annotations <- c("Neuron", "Astrocytes", "Neuron", "Oligodendrocytes", "Tancyte-like cells", "Neuron", "OPCs", "Microglia", "Neuron", "Neuron", "Neuron", "Neuron", "Ependymal cells", "Neuron", "Neuron", "Endothelial cells", "VLMCs", "Neuron", "Neuron")
+
+names(cluster_annotations) <- gsub("^g", "", colnames(cluster_avg_expression))
+
+# Map annotations back to cells based on cluster IDs
+cluster_ids <- AP@meta.data$seurat_clusters  # Extract cluster IDs
+mapped_annotations <- cluster_annotations[as.character(cluster_ids)]  # Map annotations using cluster IDs
+
+# Set names of mapped annotations to match cell IDs in AP@meta.data
+names(mapped_annotations) <- rownames(AP@meta.data)
+
+# Assign the mapped annotations to AP$Cluster_Annotation
+AP$Cluster_Annotation <- mapped_annotations
+
+# Visualization with annotations
+DimPlot(AP, reduction = "umap", group.by = "Cluster_Annotation", label = TRUE) +
+  theme(legend.position = "none") +
+  xlab("UMAP 1") + ylab("UMAP 2")
+
+
+```
+
+# Neuron annotation
+```{r}
+# Define the directory containing the marker gene files for neural subtypes
+neuron_marker_dir <- "data/neuron_marker_genes"  # Update with your actual path
+
+# List all marker gene files for neural subtypes
+neuron_marker_files <- list.files(neuron_marker_dir, pattern = "*\\.csv", full.names = TRUE)
+
+# Extract neural subtype names from the file names
+neural_subtypes <- gsub(".csv", "", basename(neuron_marker_files))
+
+# Read marker gene lists and assign neural subtype names
+neuron_marker_gene_lists <- lapply(neuron_marker_files, function(file) {
+  data <- read.csv(file, header = TRUE, stringsAsFactors = FALSE)
+  data$gene  # Extract the 'gene' column
+})
+names(neuron_marker_gene_lists) <- neural_subtypes 
+
+
+# Filter marker genes to ensure they are present in your dataset
+filtered_neuron_marker_genes <- lapply(neuron_marker_gene_lists, function(genes) {
+  intersect(genes, rownames(AP@assays$RNA))
+})
+
+# Step 1: Subset the dataset to include only Neurons
+neuron_cells <- rownames(AP@meta.data)[AP$Cluster_Annotation == "Neuron"]
+neuron_data <- subset(AP, cells = neuron_cells)
+
+neuron_data <- FindNeighbors(neuron_data, dims = 1:30)  # Adjust dims based on elbow plot
+neuron_data <- FindClusters(neuron_data, resolution = 0.5)  # Adjust resolution to get 25 clusters
+
+# Check how many clusters were created
+table(Idents(neuron_data))
+
+saveRDS(neuron_data, "neuron_data_tmp.rds")
+seurat_counts <- neuron_data@assays$RNA
+seurat_clusters <- Idents(neuron_data)
+
+# Identify all layers that contain "counts"
+count_layers <- grep("^counts", Layers(neuron_data[["RNA"]]), value = TRUE)
+
+# Extract all count layers and store them in a list
+count_matrices <- lapply(count_layers, function(layer) {
+  LayerData(neuron_data, assay = "RNA", layer = layer)
+})
+
+all_genes <- Reduce(union, lapply(count_matrices, rownames))
+all_cells <- Reduce(union, lapply(count_matrices, colnames))
+
+# Function to pad matrices so all have the same genes/cells
+pad_matrix <- function(mat, all_genes, all_cells) {
+  missing_genes <- setdiff(all_genes, rownames(mat))
+  missing_cells <- setdiff(all_cells, colnames(mat))
+  
+  # Add missing genes (rows)
+  if (length(missing_genes) > 0) {
+    empty_genes <- Matrix(0, nrow = length(missing_genes), ncol = ncol(mat), sparse = TRUE)
+    rownames(empty_genes) <- missing_genes
+    mat <- rbind(mat, empty_genes)
+  }
+  
+  # Add missing cells (columns)
+  if (length(missing_cells) > 0) {
+    empty_cells <- Matrix(0, nrow = nrow(mat), ncol = length(missing_cells), sparse = TRUE)
+    colnames(empty_cells) <- missing_cells
+    mat <- cbind(mat, empty_cells)
+  }
+  
+  # Ensure consistent order
+  mat <- mat[all_genes, all_cells, drop = FALSE]
+  
+  return(mat)
+}
+
+# Apply padding to all matrices
+count_matrices <- lapply(count_matrices, pad_matrix, all_genes, all_cells)
+
+# Stack matrices together instead of summing
+seurat_counts <- do.call(cbind, count_matrices)
+
+# Convert to sparse format
+seurat_counts <- as(seurat_counts, "dgCMatrix")
+
+# Check final matrix
+print(dim(seurat_counts))  # Should include all genes and cells
+print(class(seurat_counts))  # Should be "dgCMatrix"
+
+all.sets <- lapply(names(filtered_neuron_marker_genes), function(x) {
+    GeneSet(filtered_neuron_marker_genes[[x]], setName=x)        
+})
+all.sets <- GeneSetCollection(all.sets)
+
+cbind(nGenes(all.sets))
+
+rankings <- AUCell_buildRankings(seurat_counts,
+    plotStats=TRUE, verbose=FALSE)
+cell.aucs <- AUCell_calcAUC(all.sets, rankings, aucMaxRank = ceiling(0.10 * nrow(rankings)))
+results <- t(assay(cell.aucs))
+head(results)
+
+
+
+# Step 2: Re-cluster the Subsetted Data
+# Normalize and scale the data (if needed)
+neuron_data <- NormalizeData(neuron_data)
+neuron_data <- FindVariableFeatures(neuron_data)
+neuron_data <- ScaleData(neuron_data)
+neuron_data <- RunPCA(neuron_data, npcs = 30)
+neuron_data <- RunUMAP(neuron_data, dims = 1:30)
+neuron_data <- FindNeighbors(neuron_data, dims = 1:30)
+
+# Set a higher resolution to get up to 25 clusters
+neuron_data <- FindClusters(neuron_data, resolution = 1.5)  # Adjust resolution as needed
+
+# Step 3: Annotate the New Clusters
+# Calculate average expression for neural subtype marker genes
+neuron_avg_expression <- AverageExpression(neuron_data, 
+                                           features = unlist(filtered_neuron_marker_genes))$RNA
+
+# Calculate cluster scores for each neural subtype
+neuron_cluster_scores <- lapply(filtered_neuron_marker_genes, function(genes) {
+  colMeans(neuron_avg_expression[genes, , drop = FALSE], na.rm = TRUE)
+})
+
+# Combine scores into a data frame
+scores_df <- do.call(rbind, neuron_cluster_scores)
+colnames(scores_df) <- paste0("g", 0:(ncol(scores_df) - 1))
+
+library(ggplot2)
+scores_long <- reshape2::melt(scores_df)
+
+ggplot(scores_long, aes(x = value)) + 
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  facet_wrap(~ Var2, scales = "free_x") + 
+  labs(title = "Distribution of Scores for Each Cluster", x = "Score", y = "Frequency")
+
+delta_threshold <- 0.001  # Minimum difference required between top 2 scores
+
+# Assign each cell type to a cluster or leave it unassigned
+cluster_assignments <- apply(scores_df, 1, function(scores) {
+  sorted_scores <- sort(scores, decreasing = TRUE)  # Sort scores in descending order
+  if ((sorted_scores[1] - sorted_scores[2]) >= delta_threshold) {
+    names(sorted_scores)[1]  # Assign the cluster with the highest score
+  } else {
+    NA  # Leave unassigned if the score difference is below the threshold
+  }
+})
+
+# View the cluster assignments
+table(cluster_assignments, useNA = "ifany") 
+
+# Create a result data frame
+result <- data.frame(Cluster = colnames(scores_df), AssignedCellType = assigned_cell_types)
+
+# View the assignments
+print(result)
+# Annotate the new clusters based on the highest score
+neuron_cluster_annotations <- apply(as.data.frame(neuron_cluster_scores), 1, function(scores) {
+  neural_subtypes[which.max(scores)]
+})
+
+names(neuron_cluster_annotations) <- gsub("^g", "", colnames(neuron_avg_expression))
+
+# Map annotations back to cells
+new_cluster_ids <- neuron_data@meta.data$seurat_clusters  # Extract new cluster IDs
+names(new_cluster_ids) <- rownames(neuron_data@meta.data)
+
+new_mapped_annotations <- neuron_cluster_annotations[as.character(new_cluster_ids)]
+
+names(new_mapped_annotations) <- names(new_cluster_ids)
+# Assign the mapped annotations to the neuron data
+neuron_data$Neural_Subtype <- new_mapped_annotations
+
+# Handle missing values
+neuron_data$Neural_Subtype[is.na(neuron_data$Neural_Subtype)] <- "Unknown"
+
+# Step 4: Visualize the Results
+DimPlot(neuron_data, reduction = "umap", group.by = "Neural_Subtype", label = TRUE) +
+  theme(legend.position = "right") +
+  xlab("UMAP 1") + ylab("UMAP 2")
+
+
+```
+
+# Load and preprocess ARH-ME data (Campbell et al.)
+```{r}
+
+# Load count matrix
+campbell.counts <- read.table(gzfile("data/campbell/GSE93374_Merged_all_020816_BatchCorrected_LNtransformed_doubletsremoved_Data.txt.gz"))
+
+# Initialize a Seurat object
+campbell <- CreateSeuratObject(counts = campbell.counts)
+
+# Add cell type information to Seurat object
+campbell.meta <- read.table(gzfile("data/campbell/GSE93374_cell_metadata.txt.gz"), sep = "\t", header = TRUE)
+
+campbell.meta <- campbell.meta[, c("X1.ID", "X7.clust_all", "All.Cell.Clusters")]
+colnames(campbell.meta) <- c("cell.id", "cell.type", "annotation")
+
+mapping <- data.frame(
+  cell.type = gsub("\\..*", "", campbell.meta$annotation),  # Extract cluster part (e.g., a01, a02)
+  annotation = campbell.meta$annotation,  # Full annotation (e.g., Oligodend3)
+  stringsAsFactors = FALSE
+)
+
+mapping <- mapping[!duplicated(mapping$cell.type), ]
+mapping <- mapping[-nrow(mapping), ]
+campbell.meta <- data.frame(apply(campbell.meta, 2, as.character), stringsAsFactors = FALSE)
+campbell.meta <- left_join(campbell.meta, mapping, by = "cell.type")
+campbell.meta$annotation <- campbell.meta$annotation.y
+campbell.meta <- campbell.meta %>%
+  select(-annotation.x, -annotation.y)
+campbell$cell.id <- rownames(campbell@meta.data)
+campbell.meta <- left_join(campbell@meta.data, campbell.meta, by="cell.id")
+campbell$cell.type <- campbell.meta$annotation
+
+campbell <- subset(campbell, subset = cell.type %in% c("miss", "a19.ParsTuber1", "a20.ParsTuber2"), invert = TRUE)
+
+# Register parallel backend
+library(doParallel)
+
+campbell <- readRDS("data/campbell.rds")
+# Normalize data
+campbell <- NormalizeData(object = campbell, verbose = F)
+
+Idents(object = campbell) = "cell.type"
+
+
+num_cores <- 4
+registerDoParallel(cores = num_cores)
+marker.genes <- c()
+marker.genes <- foreach(i = unique(campbell$cell.type))  %dopar% {
+  
+  markers <- FindMarkers(campbell, 
+                        ident.1 = i,
+                        test.use = "MAST", only.pos = TRUE, 
+                        logfc.threshold = 0.25)
+  markers <- rownames(markers)[1:100]
+  list(markers)
+}
+
+
+marker.genes <- unlist(marker.genes)
+
+campbell <- ScaleData(object = campbell, verbose = F, features = marker.genes) 
+campbell <- RunPCA(object = campbell, npcs = 30, verbose = F, features = marker.genes)
+```
+
+# Project labels from ARH-ME to AP
+```{r}
+AP <- readRDS("data/AP_Seurat_obj_tmp0.rds")
+anchors <- FindTransferAnchors(reference = campbell, query = AP, 
+                               dims = 1:30, project.query = T, verbose = F, 
+                               features = marker.genes)
+predictions <- TransferData(anchorset = anchors, refdata = campbell$cell.type, 
+                            dims = 1:30, verbose = FALSE, k.weight = 4)
+
+AP$predicted.id <- predictions$predicted.id
+AP$prediction.score <- predictions$prediction.score.max
+
+DimPlot(AP, reduction = "umap", label = F, group.by = "predicted.id") + 
+  xlab("UMAP 1") + ylab("UMAP 2")
+```
+
+# Label microglia
+```{r}
+AP$clusters <- as.numeric(as.character(AP$integrated_snn_res.0.3))
+
+# Define microglia cluster
+AP$clusters[which(AP$predicted.id == "a07.PVMMicro" &
+                               AP$prediction.score >= 0.5)] <- 20
+
+major.cell.type <- c("Astrocytes", "Neurons", "Neurons", "Neurons", "Oligodendrocytes", 
+                     "Neurons", "Neurons", "Neurons","Neurons", "Neurons",
+                     "Neurons", "Neurons", "Neurons", "Neurons", "OPCs",
+                     "Ependymal cells", "Tanycyte-like cells", "Endothelial cells", 
+                     "VLMCs", "Astrocytes", "Microglia")
+
+AP$cell.type <- major.cell.type[(AP$clusters + 1)]
+
+DimPlot(AP, reduction = "umap", label = F, group.by = "cell.type") + 
+  xlab("UMAP 1") + ylab("UMAP 2")
+
+```
+
+# Compute silhouette coefficient
+```{r}
+pc <- AP@reductions$pca@cell.embeddings[,1:30]
+distance <- parDist(pc, method="euclidean")
+cluster.id <- AP$cell.type
+sil <- compute.sil(x = cluster.id, dist = distance)
+
+AP$silhouette <- sil
+AP$remove <- "No"
+AP$remove[which(AP$silhouette < 0)] <- "Yes"
+
+
+DimPlot(AP, reduction = "umap", label = T, group.by = "remove") + 
+  theme(legend.position = "none") +
+  xlab("UMAP 1") + ylab("UMAP 2")
+```
+
+# Remove cells with low silhouette coefficient 
+```{r}
+AP <- subset(AP, subset = remove == "Yes", invert = T)
+
+AP <- ScaleData(object = AP, verbose = F) 
+AP <- RunPCA(object = AP, npcs = 30, verbose = F)
+AP <- RunUMAP(object = AP, reduction = "pca", 
+    dims = 1:10)
+
+DimPlot(AP, reduction = "umap", label = T, group.by = "cell.type") + 
+  theme(legend.position = "none") +
+  xlab("UMAP 1") + ylab("UMAP 2")
+```
+
+```{r}
+saveRDS(AP,
+        file = "/projects/mludwig/Ludwig-2021/output/Seurat_objects/AP_Seurat_obj_tmp1.rds")
+```
+
