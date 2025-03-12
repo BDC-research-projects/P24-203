@@ -26,6 +26,7 @@ library(here)
 library(readr)
 library(scLink)
 library(SAVER)
+library(rlang)
 ```
 
 # Functions
@@ -538,6 +539,7 @@ cat("Percentage of cells expressing both genes:", round(overlap_pct, 2), "%\n")
 
 ```
 
+
 # Create SCE
 ```{r}
 
@@ -687,7 +689,9 @@ Idents(joined_seurat) <- "predicted_cell_type"  # Replace with the correct metad
 # Function to compute percentages per cell type
 get_overlap_by_cluster <- function(seurat_obj, gene1, gene2) {
   cluster_levels <- levels(seurat_obj)
-  results <- data.frame(Cluster = character(), Gfral_pct = numeric(), Adcyap1_pct = numeric(), Both_pct = numeric())
+  gene1_name <- paste0(gene1,"_pct")
+  gene2_name <- paste0(gene2,"_pct")
+  results <- data.frame(Cluster = character(), Both_pct = numeric(), num_cells = numeric())
   
   for (cluster in cluster_levels) {
     cells_in_cluster <- WhichCells(seurat_obj, idents = cluster)
@@ -700,12 +704,17 @@ get_overlap_by_cluster <- function(seurat_obj, gene1, gene2) {
     gfral_pct <- round(length(intersect(cells_in_cluster, gfral_cells)) / length(cells_in_cluster) * 100,3)
     adcyap1_pct <- round(length(intersect(cells_in_cluster, adcyap1_cells)) / length(cells_in_cluster) * 100,3)
     overlap_pct <- round(length(intersect(cells_in_cluster, overlap_cells)) / length(cells_in_cluster) * 100,3)
+    num_cells <- length(cells_in_cluster)
     
-    results <- rbind(results, data.frame(Cluster = cluster, Gfral_pct = gfral_pct, Adcyap1_pct = adcyap1_pct, Both_pct = overlap_pct))
+    new_row <- setNames(data.frame(cluster, gfral_pct, adcyap1_pct, overlap_pct, num_cells),
+                        c("Cluster", gene1_name, gene2_name, "Both_pct", "Number of cells"))
+    results <- rbind(results, new_row)
   }
   
   return(results)
 }
+
+
 
 # Run the function
 overlap_results <- get_overlap_by_cluster(joined_seurat, "Gfral", "Adcyap1")
@@ -781,6 +790,83 @@ print(ft1)
 print(ft2)
 ggsave(here("img/expression_gfral_adcyap1_neurons.png"), plot = ft1, width = 10, height = 6, dpi = 300)
 ggsave(here("img/Co-expression_gfral_adcyap1_neurons.png"), plot = ft2, width = 20, height = 12, dpi = 600)
+```
+
+# Plot the expression values for Dbh/Adcyap1 in neurons
+```{r message=FALSE, warning=FALSE}
+ft1 <- FeaturePlot(neuron_seurat, features = c("Dbh", "Adcyap1"), min.cutoff = "q10")
+ft2 <- FeaturePlot(neuron_seurat, features = c("Dbh", "Adcyap1"), blend = TRUE, pt.size = 0.1) +
+  theme(plot.title = element_text(hjust = 0.5))
+dbh_cells <- WhichCells(neuron_seurat, expression = Dbh > 0)
+adcyap1_cells <- WhichCells(neuron_seurat, expression = Adcyap1 > 0)
+
+print(ft1)
+print(ft2)
+ggsave(here("img/expression_dbh_adcyap1_neurons.png"), plot = ft1, width = 10, height = 6, dpi = 300)
+ggsave(here("img/Co-expression_dbh_adcyap1_neurons.png"), plot = ft2, width = 20, height = 12, dpi = 600)
+
+# Find cells that express both genes
+overlap_cells <- intersect(dbh_cells, adcyap1_cells)
+
+# Compute percentages
+total_cells <- length(Cells(neuron_seurat))
+dbh_pct <- length(dbh_cells) / total_cells * 100
+adcyap1_pct <- length(adcyap1_cells) / total_cells * 100
+overlap_pct <- length(overlap_cells) / total_cells * 100
+
+# Print results
+cat("Percentage of cells expressing Dbh:", round(dbh_pct, 2), "%\n")
+cat("Percentage of cells expressing Adcyap1:", round(adcyap1_pct, 2), "%\n")
+cat("Percentage of cells expressing both genes:", round(overlap_pct, 2), "%\n")
+
+overlap_results <- get_overlap_by_cluster(neuron_seurat, "Dbh", "Adcyap1")
+print(overlap_results)
+
+library(writexl)
+
+# Save dataframe to an Excel file
+write_xlsx(overlap_results, "dbh_adcyap1_overlap_results.xlsx")
+
+
+```
+
+# Scatter plot
+```{r}
+library(SingleCellExperiment)
+library(ggplot2)
+library(Matrix)
+
+# Define genes of interest
+genes_of_interest <- c("Dbh", "Adcyap1")
+
+# Extract logcounts for only selected genes
+logcounts_data <- as.data.frame(t(as.matrix(logcounts(sce)[genes_of_interest, ])))
+
+# Get metadata with cluster labels
+metadata <- colData(sce)[, "predicted_cell_type", drop = FALSE]
+
+# Combine expression data with metadata
+subset_data <- cbind(logcounts_data, metadata)
+
+# Filter for the clusters of interest
+clusters_of_interest <- c("Glu4","Glu5", "Glu2", "Glu11")
+subset_data <- subset_data[subset_data$predicted_cell_type %in% clusters_of_interest, ]
+
+# Convert to long format for ggplot
+library(tidyr)
+subset_data_long <- pivot_longer(subset_data, cols = c("Dbh", "Adcyap1"), names_to = "Gene", values_to = "Expression")
+
+# Create scatter plot
+g <- ggplot(subset_data, aes(x = Dbh, y = Adcyap1, color = predicted_cell_type)) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(~predicted_cell_type) +
+  theme_minimal() +
+  labs(title = "Dbh vs. Adcyap1 Expression", 
+       x = "Dbh Expression (logcounts)", 
+       y = "Adcyap1 Expression (logcounts)")
+g
+
+ggsave(here("img/dbh_adcyap1_scatter_plots.png"), g, bg = 'white')
 ```
 
 # Check AP/NTS annotation in neurons
@@ -1023,13 +1109,13 @@ expr_list <- Filter(Negate(is.null), expr_list)
 expr_matrix_glu4 <- do.call(cbind, expr_list)
 
 count <- t(expr_matrix_glu4)
-genes <- c("Gfral","Adcyap1","Glp1r","Gpc3")
+genes <- c("Gfral","Adcyap1","Glp1r","Gpc3", "Dbh")
 
 count.norm <- sclink_norm(count, scale.factor = 1e6, filter.genes = FALSE, gene.names = genes)
 gc()
 
 networks <- sclink_net(expr = count.norm, ncores = 1, lda = seq(0.5, 0.1, -0.05))
-networks$cor[1:4,1:4]
+networks$cor[1:5,1:5]
 ```
 
 # Run scLink per cell type
@@ -1101,7 +1187,7 @@ process_neuron_cell_type <- function(neuron_seurat, cell_type, genes) {
   })
   
   if (!is.null(networks)) {
-    return(networks$cor[1:4, 1:4])
+    return(networks$cor[1:5, 1:5])
   } else {
     return(NULL)  # Return NULL if network creation failed
   }
@@ -1116,7 +1202,8 @@ results <- lapply(neuron_types, function(cell_type) {
 # Optionally, name the results for easy identification
 names(results) <- neuron_types
 
-saveRDS(results,"neuron_res.rds")
+#saveRDS(results,"neuron_res.rds")
+#results <- readRDS(here("data/neuron_res.rds"))
 # Initialize a data frame to hold co-expression values
 co_expression_values <- data.frame(CellType = character(), CoExpression = numeric(), stringsAsFactors = FALSE)
 
@@ -1126,9 +1213,9 @@ for (cell_type in names(results)) {
   cor_matrix <- results[[cell_type]]
   
   # Check if the matrix contains both genes
-  if ("Gfral" %in% rownames(cor_matrix) && "Adcyap1" %in% colnames(cor_matrix)) {
+  if ("Dbh" %in% rownames(cor_matrix) && "Adcyap1" %in% colnames(cor_matrix)) {
     # Extract the co-expression value for Gfral and Adcyap1
-    co_expression_value <- cor_matrix["Gfral", "Adcyap1"]
+    co_expression_value <- cor_matrix["Adcyap1", "Dbh"]
     
     # Append the result to the data frame
     co_expression_values <- rbind(co_expression_values, data.frame(CellType = cell_type, CoExpression = co_expression_value))
@@ -1140,14 +1227,14 @@ for (cell_type in names(results)) {
 # Plot co-expression values for Gfral/Adcyap1 per cell type 
 ```{r message=FALSE, warning=FALSE}
 # Extract Adcyap1 correlation values from the Gfral row
-gfral_adcyap1_values <- sapply(results, function(x) {
-  val <- x["Gfral", "Adcyap1"]
+gfral_adcyap1_values <- sapply(results_dbh, function(x) {
+  val <- x["Dbh", "Adcyap1"]
   if (is.null(val)) NA else as.numeric(val)  # Convert NULLs to NA and ensure numeric
 })
 
 # Convert to a 1-row numeric matrix
 gfral_adcyap1_matrix <- matrix(gfral_adcyap1_values, nrow = 1)
-rownames(gfral_adcyap1_matrix) <- "Gfral-Adcyap1"
+rownames(gfral_adcyap1_matrix) <- "Dbh-Adcyap1"
 colnames(gfral_adcyap1_matrix) <- names(results)
 
 # Replace NA values with 0 or use na.color argument in pheatmap
@@ -1166,14 +1253,14 @@ p <- pheatmap(
   
 )
 
-ggsave(here("img/heatmap_cluster_coexp.png"), p)
+ggsave(here("img/heatmap_cluster_coexp_dbh.png"), p)
 ```
 
 # Print co-expression values for only Glu4 cluster
 ```{r message=FALSE, warning=FALSE}
-p_glu4 <- pheatmap(results[["Glu4"]])
+p_glu4 <- pheatmap(results_dbh[["Glu2"]])
 print(p_glu4)
-ggsave(here("img/heatmap_glu4_cluster.png"),p_glu4)
+ggsave(here("img/heatmap_glu2_cluster.png"),p_glu4)
 ```
 
 # Check how many cells from Glu4 overlap with AP
@@ -1198,44 +1285,3 @@ print(paste("Percentage of Glu4 cells that are also AP:", round(percentage_overl
 sessionInfo()
 ```
 </details>
-
-# Running SAVER to confirm the results
-```{r}
-
-sce <- readRDS(here("data/sce_neuron.rds"))
-
-# Identify cells with "Glu" in their annotation
-glu_cells <- grepl("^Glu", sce$predicted_cell_type)
-
-# Subset the SingleCellExperiment object
-sce_glu <- sce[, glu_cells]
-
-cl <- makeCluster(8)
-registerDoParallel(cl)
-
-#saver <- saver(sce@assays@data$counts, ncores=8, estimates.only = TRUE)
-
-genes <- c("Gfral","Adcyap1","Glp1r","Gpc3")
-genes.ind <- which(rownames(sce_glu@assays@data$counts) %in% genes)
-
-# Generate predictions for those genes and only those
-
-saver.genes.only <- saver(sce_glu@assays@data$counts, pred.genes = genes.ind, 
-                                 pred.genes.only = TRUE)
-
-
-# Run cor.genes() on the two genes
-saver.cor.gene <- cor.genes(saver.genes.only)
-saver1.cor.cell <- cor.cells(saver.genes.only)
-
-# Assuming 'gene_list' is your list of genes# Replace with your actual gene names
-
-# Filter the SingleCellExperiment object for the specified genes
-sce_filtered <- sce[rownames(sce) %in% genes]
-# Normalize the filtered data
-sce_filtered <- scran::normalize(sce_filtered)
-
-
-```
-
-
