@@ -1,0 +1,198 @@
+---
+title: "snRNA_rerun_genes"
+author: "Kristina Benevides"
+date: "2025-07-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries
+
+```{r warning=FALSE, message=FALSE}
+library(here)
+library(readr)
+library(scLink)
+library(pheatmap)
+library(ggplot2)
+library(SingleCellExperiment)
+library(Matrix)
+library(tidyr)
+library(Seurat)
+```
+
+## Load the data
+
+```{r load_data}
+sce <- readRDS(here("data/sce_neuron.rds"))
+neuron_seurat <- readRDS(here("data/neuron_seurat_2.rds"))
+expr_matrix_all <- readRDS(here("data/expr_matrix_all.rds"))
+results <- readRDS(here("data/neuron_res.rds"))
+```
+
+## Check expression of two genes in neurons
+```{r message=FALSE, warning=FALSE}
+
+genes_subset <- c("Gfral","Adcyap1") # CHANGE
+
+ft1 <- FeaturePlot(neuron_seurat, features = genes_subset, min.cutoff = "q10")
+ft2 <- FeaturePlot(neuron_seurat, features = genes_subset, blend = TRUE, pt.size = 0.1) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+print(ft1)
+print(ft2)
+
+ggsave(here("img/expression_GOIs_neurons.png"), plot = ft1, width = 10, height = 6, dpi = 300)
+ggsave(here("img/Co-expression_GOIs_neurons.png"), plot = ft2, width = 20, height = 12, dpi = 600)
+```
+
+## Genes of Interest
+
+Set your genes of interest.
+
+```{r genes, echo=FALSE}
+
+genes <- c("Gfral","Adcyap1", "Gpc3", "Glp1r") # CHANGE
+
+# If you have more genes, like 50-500 then put them in a file "GOIs.txt" (one gene per row) and use the below code
+#genes <- readLines(here("GOIs.txt"))
+```
+
+## Co-expression GOIs
+
+Run scLink to look at the co-expression Gfral/Adcyap1. OBS! This step is very resource demanding, make sure to have at least 80 GB RAM on your system. 
+
+```{r scLink, echo=FALSE}
+
+count <- t(expr_matrix_all)
+
+count.norm <- sclink_norm(count, scale.factor = 1e6, filter.genes = FALSE, gene.names = genes)
+gc()
+
+networks <- sclink_net(expr = count.norm, ncores = 1, lda = seq(0.5, 0.1, -0.05))
+
+```
+
+# Results from from scLink
+```{r}
+# Network correlation
+networks$cor[1:length(genes),1:length(genes)]
+# Network details
+net1 = networks$summary[[1]]
+net1
+```
+
+# Select gene for pairwise comparisons
+
+```{r}
+gene1 <- "Gfral" # CHANGE
+gene2 <- "Adcyap1" # CHANGE  
+```
+
+# Pairwise Co-expression values per neuron cell type
+```{r}
+
+# Initialize a data frame to hold co-expression values
+co_expression_values <- data.frame(CellType = character(), CoExpression = numeric(), stringsAsFactors = FALSE)
+
+# Loop through each entry in results
+for (cell_type in names(results)) {
+  # Extract the correlation matrix for the current cell type
+  cor_matrix <- results[[cell_type]]
+  
+  # Check if the matrix contains both genes
+  if (gene1 %in% rownames(cor_matrix) && gene2 %in% colnames(cor_matrix)) {
+    # Extract the co-expression value for the GOIs
+    co_expression_value <- cor_matrix[gene1, gene2]
+    
+    # Append the result to the data frame
+    co_expression_values <- rbind(co_expression_values, data.frame(CellType = cell_type, CoExpression = co_expression_value))
+  }
+}
+
+co_expression_values
+```
+
+
+# Scatter plot
+```{r}
+
+# Define clusters of interest
+clusters_of_interest <- c("Glu4","Glu5", "Glu8", "Glu10") # CHANGE
+
+# Define genes of interest
+genes_of_interest <- genes
+
+# Define subset
+subset <- c(gene1, gene2)
+
+# Extract logcounts for only selected genes
+logcounts_data <- as.data.frame(t(as.matrix(logcounts(sce)[genes_of_interest, ])))
+
+# Get metadata with cluster labels
+metadata <- colData(sce)[, "predicted_cell_type", drop = FALSE]
+
+# Combine expression data with metadata
+subset_data <- cbind(logcounts_data, metadata)
+
+# Filter for the clusters of interest
+subset_data <- subset_data[subset_data$predicted_cell_type %in% clusters_of_interest, ]
+
+# Convert to long format for ggplot
+subset_data_long <- pivot_longer(subset_data, cols = subset, names_to = "Gene", values_to = "Expression")
+
+# Create scatter plot
+g <- ggplot(subset_data, aes(x = Gfral, y = Adcyap1, color = predicted_cell_type)) + # CHANGE
+  geom_point(alpha = 0.5) +
+  facet_wrap(~predicted_cell_type) +
+  theme_minimal() +
+  labs(title = "Gfral vs. Adcyap1 Expression",  #CHANGE
+       x = "Gfral Expression (logcounts)",  #CHANGE
+       y = "Adcyap1 Expression (logcounts)") #CHANGE
+g
+
+ggsave(here("img/GOIs_scatter_plots.png"), g, bg = 'white')
+```
+
+# Plot co-expression values for Gfral/Adcyap1 per cell type 
+```{r message=FALSE, warning=FALSE}
+# Extract Adcyap1 correlation values from the Gfral row
+genes_values <- sapply(results, function(x) {
+  val <- x[gene1, gene2]
+  if (is.null(val)) NA else as.numeric(val)  # Convert NULLs to NA and ensure numeric
+})
+
+# Convert to a 1-row numeric matrix
+genes_matrix <- matrix(genes_values, nrow = 1)
+rownames(genes_matrix) <- "Gfral-Adcyap1" #CHANGE
+colnames(genes_matrix) <- names(results)
+
+# Replace NA values with 0 or use na.color argument in pheatmap
+genes_matrix[is.na(genes_matrix)] <- 0  
+
+# Create heatmap
+p <- pheatmap(
+  genes_matrix,
+  cluster_rows = FALSE,  # No need to cluster one row
+  cluster_cols = TRUE,   # Cluster cell types
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  main = "Gfral-Adcyap1 Co-expression Across Cell Types", #CHANGE
+  na_col = "gray", 
+  angle_col = 45,
+  cellheight = 60
+  
+)
+
+ggsave(here("img/heatmap_cluster_coexp_dbh.png"), p)
+```
+
+# Print co-expression values for only one cluster
+```{r message=FALSE, warning=FALSE}
+cluster <- "Glu8" #CHANGE
+p_cluster <- pheatmap(results[[cluster]])
+print(p_cluster)
+ggsave(here("img/heatmap_cluster.png"),p_cluster)
+
+```
