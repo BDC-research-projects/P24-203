@@ -55,7 +55,7 @@ Set your genes of interest.
 
 ```{r genes, echo=FALSE}
 
-genes <- c("Gfral","Tlr3", "Adcyap1") # CHANGE
+genes <- c("Gfral","Tlr3", "Adcyap1", "Dbh") # CHANGE
 
 # If you have more than a few genes, then put them in a file "GOIs.txt" (one gene per row) and use the below code
 #genes <- readLines(here("GOIs.txt"))
@@ -280,3 +280,129 @@ print(p_cluster)
 ggsave(here("img/heatmap_cluster.png"),p_cluster)
 
 ```
+# Plot co-expression values for gene1/gene2 per cell type 
+```{r message=FALSE, warning=FALSE}
+# Define your gene pairs
+gene_pairs <- list(
+  c("Gfral", "Tlr3"),
+  c("Gfral", "Adcyap1"),
+  c("Gfral", "Dbh")
+)
+
+# Optional: give rownames for gene pairs (for the heatmap rows)
+pair_names <- sapply(gene_pairs, function(p) paste(p[1], p[2], sep = "-"))
+
+# Create matrix: rows = gene pairs, cols = cell types (length of results)
+genes_matrix <- do.call(rbind, lapply(gene_pairs, function(pair) {
+  vals <- sapply(results, function(x) {
+    val <- x[pair[1], pair[2]]
+    if (is.null(val)) NA else as.numeric(val)
+  })
+  vals
+}))
+
+# Set row and column names
+rownames(genes_matrix) <- pair_names
+colnames(genes_matrix) <- names(results)
+
+# Handle NA values (e.g., replace with 0)
+genes_matrix[is.na(genes_matrix)] <- 0
+
+# Symmetric color scale limits
+max_val <- max(abs(genes_matrix), na.rm = TRUE)
+breaks <- seq(-max_val, max_val, length.out = 100)
+
+# Calculate plot dimensions dynamically
+n_rows <- nrow(genes_matrix)
+n_cols <- ncol(genes_matrix)
+plot_width <- 1 + 0.3 * n_cols + 2  # Added more width (2 instead of 1.5) for color bar
+plot_height <- 1 + 0.5 * n_rows
+
+# Save heatmap with enough width to fit color bar
+pheatmap(
+  genes_matrix,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = colorRampPalette(c("blue", "white", "red"))(length(breaks) - 1),
+  breaks = breaks,
+  main = "Gene Pair Co-expression Across Cell Types",
+  na_col = "gray",
+  angle_col = 45,
+  cellheight = 20,
+  cellwidth = 20,
+  fontsize = 10,
+  filename = here("img/heatmap_cluster_coexp_multiple_genes_fullrange.png"),
+  width = plot_width,
+  height = plot_height
+)
+
+# Cap values to improve color contrast
+cap_value <- 0.1  # You can adjust this depending on your data spread
+genes_matrix_capped <- genes_matrix
+genes_matrix_capped[genes_matrix_capped > cap_value] <- cap_value
+genes_matrix_capped[genes_matrix_capped < -cap_value] <- -cap_value
+
+# Define color scale
+breaks <- seq(-cap_value, cap_value, length.out = 100)
+
+# Dynamically calculate plot size
+# Adjust these factors as needed for clarity
+n_rows <- nrow(genes_matrix_capped)
+n_cols <- ncol(genes_matrix_capped)
+plot_width <- 1 + 0.3 * n_cols + 1.5  # +1.5 for space for color bar
+plot_height <- 1 + 0.5 * n_rows
+
+# Create heatmap
+p <- pheatmap(
+  genes_matrix_capped,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = colorRampPalette(c("blue", "white", "red"))(length(breaks) - 1),
+  breaks = breaks,
+  main = "Gene Pair Co-expression Across Cell Types",
+  na_col = "gray",
+  angle_col = 45,
+  cellheight = 20,
+  cellwidth = 20,
+  fontsize = 10,
+  filename = here("img/heatmap_cluster_coexp_multiple_genes.png"),
+  width = plot_width,
+  height = plot_height
+)
+
+
+```
+
+# Cap values to improve color contrast
+cap_value <- 0.1  # You can adjust this depending on your data spread
+genes_matrix_capped <- genes_matrix
+genes_matrix_capped[genes_matrix_capped > cap_value] <- cap_value
+genes_matrix_capped[genes_matrix_capped < -cap_value] <- -cap_value
+
+# Define color scale
+breaks <- seq(-cap_value, cap_value, length.out = 100)
+
+# Dynamically calculate plot size
+# Adjust these factors as needed for clarity
+n_rows <- nrow(genes_matrix_capped)
+n_cols <- ncol(genes_matrix_capped)
+plot_width <- 1 + 0.3 * n_cols + 1.5  # +1.5 for space for color bar
+plot_height <- 1 + 0.5 * n_rows
+
+# Create heatmap
+p <- pheatmap(
+  genes_matrix_capped,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = colorRampPalette(c("blue", "white", "red"))(length(breaks) - 1),
+  breaks = breaks,
+  main = "Gene Pair Co-expression Across Cell Types",
+  na_col = "gray",
+  angle_col = 45,
+  cellheight = 20,
+  cellwidth = 20,
+  fontsize = 10,
+  filename = here("img/heatmap_cluster_coexp_multiple_genes.png"),
+  width = plot_width,
+  height = plot_height
+)
