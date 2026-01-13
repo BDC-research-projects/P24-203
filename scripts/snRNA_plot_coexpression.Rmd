@@ -372,37 +372,3 @@ p <- pheatmap(
 
 
 ```
-
-# Cap values to improve color contrast
-cap_value <- 0.1  # You can adjust this depending on your data spread
-genes_matrix_capped <- genes_matrix
-genes_matrix_capped[genes_matrix_capped > cap_value] <- cap_value
-genes_matrix_capped[genes_matrix_capped < -cap_value] <- -cap_value
-
-# Define color scale
-breaks <- seq(-cap_value, cap_value, length.out = 100)
-
-# Dynamically calculate plot size
-# Adjust these factors as needed for clarity
-n_rows <- nrow(genes_matrix_capped)
-n_cols <- ncol(genes_matrix_capped)
-plot_width <- 1 + 0.3 * n_cols + 1.5  # +1.5 for space for color bar
-plot_height <- 1 + 0.5 * n_rows
-
-# Create heatmap
-p <- pheatmap(
-  genes_matrix_capped,
-  cluster_rows = TRUE,
-  cluster_cols = TRUE,
-  color = colorRampPalette(c("blue", "white", "red"))(length(breaks) - 1),
-  breaks = breaks,
-  main = "Gene Pair Co-expression Across Cell Types",
-  na_col = "gray",
-  angle_col = 45,
-  cellheight = 20,
-  cellwidth = 20,
-  fontsize = 10,
-  filename = here("img/heatmap_cluster_coexp_multiple_genes.png"),
-  width = plot_width,
-  height = plot_height
-)

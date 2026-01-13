@@ -662,6 +662,7 @@ tab <- table(new.labels, sce$seurat_clusters)
 
 
 ```
+
 # Plot cluster annotation
 ```{r message=FALSE, warning=FALSE}
 joined_seurat$predicted_cell_type <- new.labels
@@ -773,6 +774,7 @@ saveRDS(neuron_seurat, here("data/neuron_subset.rds"))
 
 # Neuron cluster composition
 ```{r message=FALSE, warning=FALSE}
+neuron_seurat <- readRDS(here("data/neuron_subset.rds"))
 neuron_clus_comp <- plot_integrated_clusters(neuron_seurat)
 print(neuron_clus_comp)
 ggsave(here("img/neuron_cluster_comp.png"), neuron_clus_comp)
@@ -906,10 +908,10 @@ tab <- table(new.labels, sce$seurat_clusters)
 plot_grid(AUCell_exploreThresholds(cell.aucs[1], plotHist=TRUE, assign=TRUE), 
           AUCell_exploreThresholds(cell.aucs[2], plotHist=TRUE, assign=TRUE))
 
-
-
 ```
+
 # Plot cluster annotation
+
 ```{r message=FALSE, warning=FALSE}
 
 neuron_seurat$AP_NTS_Cluster_Annotation <- new.labels
@@ -921,7 +923,9 @@ all_cells <- DimPlot(neuron_seurat, group.by = "AP_NTS_Cluster_Annotation", labe
 print(all_cells)
 ggsave(here("img/AP_NTS_neuron_cells_plot.png"), all_cells)
 ```
+
 # Re-annotate neuron clusters
+
 ```{r message=FALSE, warning=FALSE}
 # Create SingleCellExperiment object
 count_layers <- grep("^counts\\.", names(neuron_seurat@assays$RNA@layers), value = TRUE)
@@ -1202,7 +1206,7 @@ results <- lapply(neuron_types, function(cell_type) {
 # Optionally, name the results for easy identification
 names(results) <- neuron_types
 
-#saveRDS(results,"neuron_res.rds")
+saveRDS(results,"neuron_res.rds")
 #results <- readRDS(here("data/neuron_res.rds"))
 # Initialize a data frame to hold co-expression values
 co_expression_values <- data.frame(CellType = character(), CoExpression = numeric(), stringsAsFactors = FALSE)
