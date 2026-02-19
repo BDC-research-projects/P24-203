@@ -28,25 +28,31 @@ sce <- readRDS(here("data/sce_neuron.rds"))
 neuron_seurat <- readRDS(here("data/neuron_seurat_2.rds"))
 expr_matrix_all <- readRDS(here("data/expr_matrix_all.rds"))
 
+# Make sure we’re on the RNA assay
+DefaultAssay(neuron_seurat) <- "RNA"
+
+# IMPORTANT for v5: merge multiple layers into one
+neuron_seurat <- JoinLayers(neuron_seurat)
+
 neuron_types = c("chat1","chat2","chat3","Glu1","Glu2","Glu3","Glu4","Glu5","Glu6",
                  "Glu7","Glu8","Glu9","Glu10","Glu11","Glu12","Glu13","Glu14","Glu15",
                  "GABA1","GABA2","GABA3","GABA4","GABA5","GABA6","GABA7")
 ```
 
 ## If you first want to quickly check overall expression for two genes
-```{r message=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE, dev = "svg"}
 
-genes_subset <- c("Gfral","Tlr3") # CHANGE
+genes_subset <- c("Gfral","Tmtc2", "Slc6a15", "Man1a", "Akap13", "Etv1", "Tlr3") # CHANGE
 
 ft1 <- FeaturePlot(neuron_seurat, features = genes_subset, min.cutoff = "q10")
-ft2 <- FeaturePlot(neuron_seurat, features = genes_subset, blend = TRUE, pt.size = 0.1) +
+ft2 <- FeaturePlot(neuron_seurat, features = c("Gfral", "Tlr3"), blend = TRUE, pt.size = 0.1) +
   theme(plot.title = element_text(hjust = 0.5))
 
 print(ft1)
 print(ft2)
 
-ggsave(here("img/expression_GOIs_neurons.png"), plot = ft1, width = 10, height = 6, dpi = 300)
-ggsave(here("img/Co-expression_GOIs_neurons.png"), plot = ft2, width = 20, height = 12, dpi = 600)
+ggsave(here("img_new/expression_GOIs_neurons.pdf"), plot = ft1, width = 10, height = 6, dpi = 300)
+ggsave(here("img_new/Co-expression_neurons_tlr3.pdf"), plot = ft2, width = 20, height = 12, dpi = 600)
 ```
 
 ## Genes of Interest
@@ -55,7 +61,7 @@ Set your genes of interest.
 
 ```{r genes, echo=FALSE}
 
-genes <- c("Gfral","Tlr3", "Adcyap1", "Dbh") # CHANGE
+genes <- c("Gfral","Tmtc2", "Slc6a15", "Man1a", "Akap13", "Etv1", "Tlr3") # CHANGE
 
 # If you have more than a few genes, then put them in a file "GOIs.txt" (one gene per row) and use the below code
 #genes <- readLines(here("GOIs.txt"))
@@ -84,97 +90,808 @@ networks$cor[1:length(genes),1:length(genes)]
 net1 = networks$summary[[1]]
 net1
 ```
+```{r}
 
+# Assuming `count` is cells x genes and `genes_in_matrix` has your 2 GOIs
+Idents(neuron_seurat) <- "neuron_cell_type"
+
+#genes_of_interest <- c("Gfral", "Tlr3")
+
+genes_of_interest <- c("Gfral","Tmtc2", "Slc6a15", "Man1a", "Akap13", "Etv1", "Tlr3")
+
+cell_types <- c("chat1","chat2","chat3","Glu1","Glu2","Glu3","Glu4","Glu5","Glu6",
+                 "Glu7","Glu8","Glu9","Glu10","Glu11","Glu12","Glu13","Glu14","Glu15",
+                 "GABA1","GABA2","GABA3","GABA4","GABA5","GABA6","GABA7")
+
+# get_expression_stats <- function(seu, cell_type, genes) {
+#   subset_obj <- subset(seu, idents = cell_type)
+#   mat <- GetAssayData(subset_obj, assay = "RNA", slot = "counts")
+# 
+#   genes_present <- intersect(genes, rownames(mat))
+#   mat <- mat[genes_present, , drop = FALSE]
+# 
+#   stats <- data.frame(
+#     cell_type = cell_type,
+#     gene      = genes_present,
+#     mean_expr = Matrix::rowMeans(mat),
+#     frac_nonzero = Matrix::rowMeans(mat > 0),
+#     nonzero_cells = Matrix::rowSums(mat > 0),
+#     total_cells = ncol(mat),
+#     row.names = NULL
+#   )
+#   
+#   return(stats)
+# }
+
+get_expression_stats <- function(seu, cell_type, genes) {
+  # make sure default assay is RNA (important in v5)
+  DefaultAssay(seu) <- "RNA"
+
+  subset_obj <- subset(seu, idents = cell_type)
+
+  # v5-style: use LayerData instead of GetAssayData
+  mat <- LayerData(subset_obj, assay = "RNA", layer = "counts")
+  # alternatively: mat <- subset_obj[["RNA"]]$counts
+
+  genes_present <- intersect(genes, rownames(mat))
+  mat <- mat[genes_present, , drop = FALSE]
+
+  stats <- data.frame(
+    cell_type     = cell_type,
+    gene          = genes_present,
+    mean_expr     = Matrix::rowMeans(mat),
+    frac_nonzero  = Matrix::rowMeans(mat > 0),
+    nonzero_cells = Matrix::rowSums(mat > 0),
+    total_cells   = ncol(mat),
+    row.names     = NULL
+  )
+  
+  return(stats)
+}
+
+
+
+# Run for all four cell types
+expression_results <- do.call(
+  rbind,
+  lapply(cell_types, function(ct) get_expression_stats(neuron_seurat, ct, genes_of_interest))
+)
+
+expression_results
+
+
+
+```
 # Pairwise Co-expression values per neuron cell type
 ```{r}
 # Run scLink per cell type
 
-process_neuron_cell_type <- function(neuron_seurat, cell_type, genes) {
-  # Ensure the active identity class is set to the clustering result
-  Idents(neuron_seurat) <- "neuron_cell_type"  
-  
-  # Subset the Seurat object to include the specified neuron cell type
-  neuron_seurat_subset <- subset(neuron_seurat, idents = cell_type)
-  
-  # Extract data layers
-  data_layers <- grep("^data\\.", Layers(neuron_seurat_subset[["RNA"]]), value = TRUE)
-  
-  # Extract expression data from all layers and combine
-  expr_list <- lapply(data_layers, function(layer) {
-    layer_data <- neuron_seurat_subset[["RNA"]]@layers[[layer]]
-    
-    # Check if layer data is of type S4 and not NULL
-    if (!is.null(layer_data)) {
-      if (inherits(layer_data, "matrix") || inherits(layer_data, "dgCMatrix")) {
-        mat <- GetAssayData(neuron_seurat_subset, assay = "RNA", layer = layer)
-        
-        cat("Processing layer:", layer, "with dimensions:", dim(mat), "\n")
-        
-        # Check if the matrix has two dimensions (genes x cells)
-        if (length(dim(mat)) == 2) {
-          return(mat)
-        } else {
-          warning(paste("Layer", layer, "does not have the expected two dimensions."))
-          return(NULL)  # Skip this layer if it doesn't meet the criteria
-        }
-      } else {
-        warning(paste("Layer", layer, "is not of type S4 or is unexpected. Skipping."))
-        return(NULL)  # Skip this layer if it's not an S4 object
-      }
-    } else {
-      warning(paste("Layer", layer, "is NULL. Skipping."))
-      return(NULL)  # Skip this layer if it's NULL
-    }
-  })
-  
-  # Remove NULL entries from the list
-  expr_list <- Filter(Negate(is.null), expr_list)
-  
-  # Check if there are any valid expression matrices
-  if (length(expr_list) == 0) {
-    stop(paste("No valid expression matrices found for cell type:", cell_type))
-  }
-  
-  # Merge all extracted expression matrices (column-wise: cells are in columns)
-  expr_matrix <- do.call(cbind, expr_list)
-  
-  # Transpose
-  count <- t(expr_matrix)
-  
-  # Normalize counts
-  count.norm <- sclink_norm(count, scale.factor = 1e6, filter.genes = FALSE, gene.names = genes)
-  
-  gc()
-  
-  # Create networks
-  networks <- tryCatch({
-    sclink_net(expr = count.norm, ncores = 1, lda = seq(0.5, 0.1, -0.05))
-  }, error = function(e) {
-    warning(paste("Error in creating networks for cell type:", cell_type, "\n", e$message))
-    return(NULL)
-  })
-  
-  if (!is.null(networks)) {
-    return(networks$cor[1:length(genes), 1:length(genes)])
-  } else {
-    return(NULL)  # Return NULL if network creation failed
-  }
-}
+# process_neuron_cell_type <- function(neuron_seurat, cell_type, genes) {
+#   # Ensure the active identity class is set to the clustering result
+#   Idents(neuron_seurat) <- "neuron_cell_type"  
+#   
+# # Subset the Seurat object to include the specified neuron cell type
+# neuron_seurat_subset <- subset(neuron_seurat, idents = cell_type)
+# 
+# # Extract data layers
+# data_layers <- grep("^data$", Layers(neuron_seurat_subset[["RNA"]]), value = TRUE)
+# 
+# # Extract expression data from all layers and combine
+# expr_list <- lapply(data_layers, function(layer) {
+#   layer_data <- neuron_seurat_subset[["RNA"]]@layers[[layer]]
+# 
+#   # Check if layer data is of type S4 and not NULL
+#   if (!is.null(layer_data)) {
+#     if (inherits(layer_data, "matrix") || inherits(layer_data, "dgCMatrix")) {
+#       mat <- GetAssayData(neuron_seurat_subset, assay = "RNA", layer = layer)
+# 
+#       cat("Processing layer:", layer, "with dimensions:", dim(mat), "\n")
+# 
+#       # Check if the matrix has two dimensions (genes x cells)
+#       if (length(dim(mat)) == 2) {
+#         return(mat)
+#       } else {
+#         warning(paste("Layer", layer, "does not have the expected two dimensions."))
+#         return(NULL)  # Skip this layer if it doesn't meet the criteria
+#       }
+#     } else {
+#       warning(paste("Layer", layer, "is not of type S4 or is unexpected. Skipping."))
+#       return(NULL)  # Skip this layer if it's not an S4 object
+#     }
+#   } else {
+#     warning(paste("Layer", layer, "is NULL. Skipping."))
+#     return(NULL)  # Skip this layer if it's NULL
+#   }
+# })
+# 
+# # Remove NULL entries from the list
+# expr_list <- Filter(Negate(is.null), expr_list)
+# 
+# # Check if there are any valid expression matrices
+# if (length(expr_list) == 0) {
+#   stop(paste("No valid expression matrices found for cell type:", cell_type))
+# }
+# 
+# # Merge all extracted expression matrices (column-wise: cells are in columns)
+# expr_matrix <- do.call(cbind, expr_list)
+# 
+# # Transpose
+# count <- t(expr_matrix)
+#   
+#   # Normalize counts
+# count.norm <- sclink_norm(count, scale.factor = 1e6, filter.genes = FALSE, gene.names = genes)
+#   
+#   gc()
+#   
+#   # Create networks
+#   networks <- tryCatch({
+#     sclink_net(expr = count.norm, ncores = 1, lda = seq(0.5, 0.1, -0.05))
+#   }, error = function(e) {
+#     warning(paste("Error in creating networks for cell type:", cell_type, "\n", e$message))
+#     return(NULL)
+#   })
+#   
+#   if (!is.null(networks)) {
+#     return(networks$cor[1:length(genes), 1:length(genes)])
+#   } else {
+#     return(NULL)  # Return NULL if network creation failed
+#   }
+# }
 
-# Loop over all neuron cell types
-results <- lapply(neuron_types, function(cell_type) {
-  cat("Processing cell type:", cell_type, "\n")
-  process_neuron_cell_type(neuron_seurat, cell_type, genes)
-})
 
-# Optionally, name the results for easy identification
-names(results) <- neuron_types
+# process_neuron_cell_type_counts <- function(neuron_seurat, cell_type, genes,
+#                                             debug = FALSE) {
+#   Idents(neuron_seurat) <- "neuron_cell_type"
+#   DefaultAssay(neuron_seurat) <- "RNA"
+# 
+#   seu <- subset(neuron_seurat, idents = cell_type)
+# 
+#   # genes x cells, with dimnames (v5-safe)
+#   mat <- LayerData(seu, assay = "RNA", layer = "counts")
+# 
+#   genes_present <- intersect(genes, rownames(mat))
+#   if (length(genes_present) < 3) {
+#     warning(paste("Cell type", cell_type, ": <3 genes present in counts layer"))
+#     return(NULL)
+#   }
+# 
+#   # subset to GOIs and transpose to cells x genes
+#   mat_goi  <- mat[genes_present, , drop = FALSE]  # genes x cells
+#   count_goi <- t(mat_goi)                         # cells x genes
+# 
+#   # Drop cells with zero total counts across GOIs (prevents NaNs in normalization)
+#   cell_sums <- Matrix::rowSums(count_goi)
+#   count_goi <- count_goi[cell_sums > 0, , drop = FALSE]
+# 
+#   # Drop genes that are all-zero in remaining cells
+#   gene_sums <- Matrix::colSums(count_goi)
+#   count_goi <- count_goi[, gene_sums > 0, drop = FALSE]
+# 
+#   if (ncol(count_goi) < 3) {
+#     warning(paste("Cell type", cell_type, ": <3 expressed genes after filtering"))
+#     return(NULL)
+#   }
+# 
+#   if (debug) {
+#     cat("\n==", cell_type, "(counts) ==\n")
+#     cat("cells used:", nrow(count_goi), " genes used:", ncol(count_goi), "\n")
+#     cat("genes:", paste(colnames(count_goi), collapse = ", "), "\n")
+#   }
+# 
+#   # Normalize counts (scLink expects counts here)
+#   count.norm <- sclink_norm(
+#     count_goi,
+#     scale.factor = scale.factor,
+#     filter.genes = FALSE,
+#     gene.names = colnames(count_goi)
+#   )
+# 
+#   # Safety: if any non-finite values remain, set to 0 (or you can stop instead)
+#   if (any(!is.finite(count.norm))) {
+#     warning(paste("Non-finite values after sclink_norm for", cell_type, "- setting to 0"))
+#     count.norm[!is.finite(count.norm)] <- 0
+#   }
+# 
+#   networks <- tryCatch(
+#     sclink_net(expr = count.norm),
+#     error = function(e) {
+#       warning(paste("Error in networks for", cell_type, ":", e$message))
+#       NULL
+#     }
+#   )
+# 
+#   if (is.null(networks)) return(NULL)
+# 
+#   cor_mat <- networks$cor
+#   cor_mat[colnames(count_goi), colnames(count_goi), drop = FALSE]
+# }
+# 
+# 
+# # Loop over all neuron cell types
+# results <- lapply(neuron_types, function(cell_type) {
+#   cat("Processing cell type:", cell_type, "\n")
+#   process_neuron_cell_type_counts(neuron_seurat, cell_type, genes)
+# })
+# 
+# # Optionally, name the results for easy identification
+# names(results) <- neuron_types
 
 ```
+
+```{r}
+
+get_gfral_neighbors <- function(seu, cell_type, anchor="Tlr3",
+                                n_neighbors=20, min_cells_gene=5) {
+
+  seu_ct <- subset(seu, idents = cell_type)
+  counts <- LayerData(seu_ct, assay="RNA", layer="counts")
+
+  if (!(anchor %in% rownames(counts))) return(character())
+
+  # drop very sparse genes
+  keep <- Matrix::rowSums(counts > 0) >= min_cells_gene
+  counts <- counts[keep, , drop=FALSE]
+
+  # normalize quickly (CPM + log)
+  lib <- Matrix::colSums(counts)
+  expr <- log1p(t(t(counts) / lib * 1e4))
+
+  gfral_vec <- expr[anchor, ]
+  cors <- apply(expr, 1, function(x) cor(x, gfral_vec, method="spearman"))
+
+  cors <- sort(cors, decreasing=TRUE)
+  setdiff(names(cors)[1:n_neighbors], anchor)
+}
+
+neighbors_glu4 <- get_gfral_neighbors(neuron_seurat, "GABA1", n_neighbors=20)
+
+#genes <- unique(c(gois, neighbors_glu4))
+genes <- neighbors_glu4
+length(genes)
+
+Idents(neuron_seurat) <- "neuron_cell_type"
+cell_types <- levels(Idents(neuron_seurat))
+
+det_list <- list()
+
+for (ct in cell_types) {
+  seu_ct <- subset(neuron_seurat, idents = ct)
+  counts <- LayerData(seu_ct, assay = "RNA", layer = "counts")
+
+  genes_present <- intersect(genes, rownames(counts))
+  if (length(genes_present) == 0) next
+
+  det <- Matrix::rowMeans(counts[genes_present, , drop = FALSE] > 0)
+
+  det_list[[ct]] <- det
+}
+
+```
+
+```{r}
+genes_sclink <- genes
+
+# focus on relevant cell types
+Idents(neuron_seurat) <- "neuron_cell_type"
+seu_sub <- subset(neuron_seurat, idents = c("Glu4", "Glu5"))
+
+counts <- LayerData(seu_sub, assay = "RNA", layer = "counts")
+
+genes_present <- intersect(genes_sclink, rownames(counts))
+
+det_rates <- data.frame(
+  gene = genes_present,
+  detected_cells = Matrix::rowSums(counts[genes_present, ] > 0),
+  total_cells = ncol(counts)
+)
+
+det_rates$det_frac <- det_rates$detected_cells / det_rates$total_cells
+
+# add Tlr3 for reference
+det_tlr3 <- data.frame(
+  gene = "Tlr3",
+  detected_cells = sum(counts["Tlr3", ] > 0),
+  total_cells = ncol(counts)
+)
+det_tlr3$det_frac <- det_tlr3$detected_cells / det_tlr3$total_cells
+
+det_rates <- rbind(det_rates, det_tlr3)
+
+# sort by detection rate
+det_rates <- det_rates[order(det_rates$det_frac), ]
+
+det_rates
+
+```
+
+```{r}
+# Your candidate gene set (put 25 here)
+gois <- c(
+  "Pcdh9",
+  "Gm32857",
+  "Tlr3",
+  "Trpm3",
+  "Ncam2",
+  "Cntn4",
+  "Ctnnd2",
+  "Tenm4",
+  "Robo2",
+  "Kcnab1",
+  "Erbb4",
+  "Slc38a11",
+  "Akap13",
+  "Tmtc2",
+  "Etv1",
+  "Man1a",
+  "Hs3st5",
+  "Gabra2",
+  "Sntb1",
+  "Gm17922",
+  "Slc6a15",
+  "Mpped2",
+  "Gfral",
+  "Fras1",
+  "Nxn", "Gm9732", "4930503E14Rik", "Crhr2", "Nts"
+)
+
+
+
+Idents(neuron_seurat) <- "neuron_cell_type"
+cell_types <- levels(Idents(neuron_seurat))
+
+# scLink params
+min_cells <- 100          # minimum cells per cell type
+min_cells_gene <- 5      # gene must be detected in >= this many cells
+scale.factor <- 1e4
+max_cells <- 1000        # set to NA to disable downsampling (1000 is a good start)
+ncores <- 4              # if sclink_net supports ncores in your version
+
+run_sclink_one_fixed_genes <- function(seu, cell_type, gois,
+                                       min_cells = 100,
+                                       min_cells_gene = 5,
+                                       scale.factor = 1e4,
+                                       max_cells = 1000,
+                                       ncores = 4,
+                                       return_pcor = TRUE) {
+
+  # subset to one cell type
+  seu_ct <- subset(seu, idents = cell_type)
+
+  # optional downsample cells for speed
+  if (!is.na(max_cells) && ncol(seu_ct) > max_cells) {
+    set.seed(1)
+    keep_cells <- sample(colnames(seu_ct), max_cells)
+    seu_ct <- subset(seu_ct, cells = keep_cells)
+  }
+
+  # counts matrix: genes x cells
+  counts <- LayerData(seu_ct, assay = "RNA", layer = "counts")
+
+  # check cell count
+  if (ncol(counts) < min_cells) {
+    warning(paste(cell_type, ": too few cells:", ncol(counts)))
+    return(NULL)
+  }
+
+  # keep GOIs present
+  genes_present <- intersect(gois, rownames(counts))
+  #if (length(genes_present) < 5) {
+  #  warning(paste(cell_type, ": too few GOIs present:", length(genes_present)))
+  #  return(NULL)
+  #}
+
+  # subset to GOIs
+  mat <- counts[genes_present, , drop = FALSE]  # genes x cells
+
+  # drop genes too sparse in this cell type
+  n_detect <- Matrix::rowSums(mat > 0)
+  keep_genes <- names(n_detect)[n_detect >= min_cells_gene]
+  mat <- mat[keep_genes, , drop = FALSE]
+
+  if (nrow(mat) < 5) {
+    warning(paste(cell_type, ": too few expressed genes after filtering:", nrow(mat)))
+    return(NULL)
+  }
+
+  # transpose for scLink: cells x genes
+  expr <- t(mat)
+
+  # scLink normalization
+  expr_norm <- sclink_norm(expr,
+                           scale.factor = scale.factor,
+                           filter.genes = FALSE,
+                           gene.names = colnames(expr))
+  expr_norm[!is.finite(expr_norm)] <- 0
+
+  # run scLink
+  net <- tryCatch(
+    sclink_net(expr = expr_norm, ncores = ncores),
+    error = function(e) {
+      warning(paste(cell_type, ": sclink_net failed:", e$message))
+      NULL
+    }
+  )
+  if (is.null(net)) return(NULL)
+
+  # extract correlation matrices restricted to GOIs kept
+  cor_mat <- net$cor
+  gois_used <- intersect(gois, colnames(cor_mat))
+  cor_goi <- cor_mat[gois_used, gois_used, drop = FALSE]
+
+  out <- list(
+    cell_type = cell_type,
+    n_cells_used = nrow(expr_norm),
+    n_genes_used = ncol(expr_norm),
+    genes_used = gois_used,
+    cor_goi = cor_goi
+  )
+
+  # partial correlations (optional, but nice for "conditional association")
+  if (return_pcor && !is.null(net$pcor)) {
+    pcor_mat <- net$pcor
+    out$pcor_goi <- pcor_mat[gois_used, gois_used, drop = FALSE]
+  }
+
+  # IMPORTANT: do NOT store the full net unless you really need it
+  # out$net <- net
+
+  out
+}
+
+all_results <- lapply(cell_types, function(ct) {
+  message("Processing: ", ct)
+  run_sclink_one_fixed_genes(neuron_seurat, ct, gois,
+                            min_cells = min_cells,
+                            min_cells_gene = min_cells_gene,
+                            scale.factor = scale.factor,
+                            max_cells = max_cells,
+                            ncores = ncores,
+                            return_pcor = TRUE)
+})
+names(all_results) <- cell_types
+all_results <- Filter(Negate(is.null), all_results)
+
+
+
+```
+
+```{r}
+library(pheatmap)
+
+# if you already have it as a matrix:
+mat <- all_results$Glu4$cor_goi
+
+# ensure it's numeric matrix
+mat <- as.matrix(mat)
+storage.mode(mat) <- "numeric"
+
+# optional: order genes exactly how you want
+genes <- rownames(mat)
+mat <- mat[genes, genes]
+
+# diverging palette centered at 0
+bk <- seq(-1, 1, length.out = 101)
+
+pheatmap(mat,
+         breaks = bk,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         display_numbers = FALSE,   # remove if too busy
+         fontsize_number = 8,
+         main = "Gene–gene correlations (scLink cor)",
+         filename = here("img_new/gene_gene_corr_scLink_25_genes.pdf"))
+
+gfral_vec <- mat["Gfral", , drop = FALSE]   # 1 x genes
+
+pheatmap(gfral_vec,
+         cluster_rows = FALSE,
+         cluster_cols = TRUE,       # clusters genes by similarity to Gfral
+         display_numbers = TRUE,
+         number_format = "%.2f",
+         main = "Correlation with Gfral")
+
+gfral_vec2 <- mat[, "Gfral", drop = FALSE]  # genes x 1
+
+pheatmap(gfral_vec2,
+         cluster_rows = TRUE,
+         cluster_cols = FALSE,
+         display_numbers = TRUE,
+         number_format = "%.2f",
+         main = "Correlation with Gfral")
+
+pheatmap(mat,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         display_numbers = FALSE,
+         main = "Gene–gene correlations Glu4",
+         filename=here("img_new/heatmap_all_gene_gene_corr_glu4.png"))
+
+library(pheatmap)
+
+# Define reduced, ordered gene list
+gene_order <- c(
+  "Gfral",
+  "Etv1",
+  "Man1a",
+  "Slc6a15",
+  "Akap13",
+  "Tmtc2",
+  "Tlr3"
+)
+
+# Keep only genes that actually exist in the matrix
+gene_order <- intersect(gene_order, rownames(mat))
+
+# Subset and order matrix
+mat_reduced <- mat[gene_order, gene_order]
+
+pheatmap(
+  mat_reduced,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  display_numbers = TRUE,
+  number_format = "%.2f",
+  fontsize_number = 10,
+  main = "Gene–gene correlations Glu 5",
+  filename=here("img_new/heatmap_GOIs_gene_gene_corr_glu5.png")
+)
+
+
+
+```
+```{r}
+library(Matrix)
+
+get_pairwise_cor_7goi <- function(seu, cell_type, gois_7,
+                                  assay="RNA", layer="counts",
+                                  min_cells=80,
+                                  min_cells_gene=3,
+                                  method="spearman",
+                                  scale.factor=1e4) {
+
+  seu_ct <- subset(seu, idents = cell_type)
+  counts <- LayerData(seu_ct, assay = assay, layer = layer)
+
+  # too few cells
+  if (ncol(counts) < min_cells) return(NULL)
+
+  genes_present <- intersect(gois_7, rownames(counts))
+  if (length(genes_present) < 2) return(NULL)
+
+  mat <- counts[genes_present, , drop = FALSE]  # genes x cells
+
+  # Normalize (logCPM)
+  lib <- Matrix::colSums(mat)
+  lib[lib == 0] <- 1
+  expr <- log1p(t(t(mat) / lib * scale.factor))  # genes x cells
+
+  # Drop genes detected in too few cells (based on RAW counts)
+  n_detect <- Matrix::rowSums(mat > 0)
+  keep <- names(n_detect)[n_detect >= min_cells_gene]
+
+  # ensure we keep matrix structure
+  expr <- expr[keep, , drop = FALSE]
+
+  # must have at least 2 genes to compute a correlation matrix
+  if (nrow(expr) < 2) return(NULL)
+
+  # cor expects observations in rows; we want correlations among genes,
+  # so use cells as observations: t(expr) is cells x genes
+  cor(as.matrix(t(expr)), method = method, use = "pairwise.complete.obs")
+}
+
+
+library(pheatmap)
+
+gois_7 <- c("Gfral","Tmtc2","Slc6a15","Man1a","Akap13","Etv1","Tlr3")
+Idents(neuron_seurat) <- "neuron_cell_type"
+cell_types <- levels(Idents(neuron_seurat))
+
+# get correlation matrix per cell type (no scLink)
+cor_results <- lapply(cell_types, function(ct) {
+  get_pairwise_cor_7goi(neuron_seurat, ct, gois_7,
+                        min_cells=80, min_cells_gene=3,
+                        method="spearman")
+})
+names(cor_results) <- cell_types
+cor_results <- Filter(Negate(is.null), cor_results)
+
+# build Gfral-vs-others heat matrix
+gene_pairs <- lapply(setdiff(gois_7, "Gfral"), function(g) c("Gfral", g))
+pair_names <- sapply(gene_pairs, function(p) paste(p[1], p[2], sep="-"))
+clusters_to_use <- names(cor_results)
+
+genes_matrix <- do.call(rbind, lapply(gene_pairs, function(pair) {
+  sapply(clusters_to_use, function(ct) {
+    mat <- cor_results[[ct]]
+    if (is.null(mat)) return(NA_real_)
+    if (!all(pair %in% rownames(mat))) return(NA_real_)
+    as.numeric(mat[pair[1], pair[2]])
+  })
+}))
+rownames(genes_matrix) <- pair_names
+colnames(genes_matrix) <- clusters_to_use
+
+# plot
+max_val <- max(abs(genes_matrix), na.rm=TRUE)
+if (!is.finite(max_val) || max_val == 0) max_val <- 0.25
+breaks <- seq(-max_val, max_val, length.out=101)
+
+pheatmap(
+  genes_matrix,
+  cluster_rows=TRUE,
+  cluster_cols=TRUE,
+  color=colorRampPalette(c("blue","white","red"))(length(breaks)-1),
+  breaks=breaks,
+  na_col="gray80",
+  angle_col=45,
+  main="Gfral co-expression across cell types (Spearman on logCPM)"
+)
+
+
+```
+
+```{r}
+# Heatmap code that works with your `all_results` object structure:
+# all_results[[cell_type]]$cor_goi is the gene×gene correlation matrix
+
+library(pheatmap)
+
+# ---- 1) Define the 7 GOIs you want in the co-expression heatmap ----
+gois_7 <- c("Gfral","Tmtc2","Slc6a15","Man1a","Akap13","Etv1","Tlr3")
+
+# ---- 2) Define the gene pairs: Gfral vs each other GOI ----
+gene_pairs <- lapply(setdiff(gois_7, "Gfral"), function(g) c("Gfral", g))
+pair_names <- sapply(gene_pairs, function(p) paste(p[1], p[2], sep = "-"))
+
+# ---- 3) Choose which cell types (ALL from scLink results) ----
+clusters_to_use <- names(all_results)
+
+# Optional: enforce a nice order (e.g., Glu first, then GABA, then others)
+# clusters_to_use <- c(sort(grep("^Glu", clusters_to_use, value=TRUE)),
+#                      sort(setdiff(clusters_to_use, grep("^Glu", clusters_to_use, value=TRUE))))
+
+# ---- 4) Build matrix: rows = gene pairs, cols = cell types ----
+genes_matrix <- do.call(rbind, lapply(gene_pairs, function(pair) {
+
+  vals <- sapply(clusters_to_use, function(ct) {
+    res <- all_results[[ct]]
+    if (is.null(res)) return(NA_real_)
+
+    mat <- res$cor_goi
+    if (is.null(mat)) return(NA_real_)
+
+    # Check genes present in this cell type's filtered scLink set
+    if (!all(pair %in% rownames(mat)) || !all(pair %in% colnames(mat))) {
+      return(NA_real_)
+    }
+
+    as.numeric(mat[pair[1], pair[2]])
+  })
+
+  as.numeric(vals)
+}))
+
+rownames(genes_matrix) <- pair_names
+colnames(genes_matrix) <- clusters_to_use
+
+# ---- 5) Symmetric color scale around 0 ----
+max_val <- max(abs(genes_matrix), na.rm = TRUE)
+if (!is.finite(max_val) || max_val == 0) max_val <- 0.25
+breaks <- seq(-max_val, max_val, length.out = 101)
+
+# ---- 6) Plot heatmap (keeps NAs as gray so you can see missing pairs) ----
+pheatmap(
+  genes_matrix,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = colorRampPalette(c("blue", "white", "red"))(length(breaks) - 1),
+  breaks = breaks,
+  main = "Gene Pair Co-expression Across Cell Types (scLink cor)",
+  na_col = "gray80",
+  angle_col = 45,
+  cellheight = 20,
+  cellwidth = 20,
+  fontsize = 10,
+  border_color = "grey70"
+)
+
+# ---- OPTIONAL: if you prefer to show 0 instead of NA (not usually recommended) ----
+# genes_matrix2 <- genes_matrix
+# genes_matrix2[is.na(genes_matrix2)] <- 0
+# pheatmap(genes_matrix2, ...same args...)
+
+```
+
+```{r}
+# Co-expression heatmap for 7 GOIs across ALL cell types
+# Assumes `results` is a named list where each element is a gene×gene correlation matrix
+# (e.g., from scLink or any method), with row/colnames = gene symbols.
+
+library(pheatmap)
+
+## 0) Define GOIs (7 genes)
+gois <- c("Gfral", "Tmtc2", "Slc6a15", "Man1a", "Akap13", "Etv1", "Tlr3")
+
+## 1) Define gene pairs: Gfral vs each other GOI
+gene_pairs <- lapply(setdiff(gois, "Gfral"), function(g) c("Gfral", g))
+pair_names <- sapply(gene_pairs, function(p) paste(p[1], p[2], sep = "-"))
+
+## 2) Choose clusters/cell types to include (ALL)
+clusters_to_use <- names(all_results)
+
+## 3) Build matrix: rows = gene pairs, cols = clusters
+genes_matrix <- do.call(rbind, lapply(seq_along(gene_pairs), function(i) {
+  pair <- gene_pairs[[i]]
+
+  vals <- sapply(results[clusters_to_use], function(mat) {
+    # mat: correlation matrix for one cell type (or NULL)
+    if (is.null(mat)) return(NA_real_)
+
+    # if your `results` stores lists (e.g. list(cor_goi=...)),
+    # uncomment and adjust one of these lines:
+    # mat <- mat$cor_goi
+    # mat <- mat$cor
+
+    # Safety: check genes exist
+    if (!all(pair %in% rownames(mat)) || !all(pair %in% colnames(mat))) return(NA_real_)
+
+    as.numeric(mat[pair[1], pair[2]])
+  })
+
+  as.numeric(vals)
+}))
+
+rownames(genes_matrix) <- pair_names
+colnames(genes_matrix) <- clusters_to_use
+
+## 4) Symmetric color scale around 0
+max_val <- max(abs(genes_matrix), na.rm = TRUE)
+if (!is.finite(max_val) || max_val == 0) max_val <- 0.25  # reasonable fallback
+breaks <- seq(-max_val, max_val, length.out = 101)
+
+## 5) Plot heatmap
+# Keep NAs as NA so `na_col` works (don’t convert to 0 unless you really want that)
+pheatmap(
+  genes_matrix,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = colorRampPalette(c("blue", "white", "red"))(length(breaks) - 1),
+  breaks = breaks,
+  main = "Gene Pair Co-expression Across Cell Types",
+  na_col = "gray80",
+  angle_col = 45,
+  cellheight = 20,
+  cellwidth = 20,
+  fontsize = 10,
+  border_color = "grey70"
+)
+
+```
+
+
+```{r}
+library(scLink)
+
+
+count = readRDS(system.file("extdata", "example.rds", package = "scLink"))
+genes = readRDS(system.file("extdata", "genes.rds", package = "scLink"))
+
+count.norm = sclink_norm(mat, scale.factor = 1e6, filter.genes = TRUE, n = 500)
+
+networks = sclink_net(expr = count.norm, ncores = 1, lda = seq(0.5, 0.1, -0.05))
+
+networks$cor
+
+
+net1 = networks$summary[[1]]
+
+```
+
 # Select subset of the above genes for pairwise comparisons
 ```{r}
 gene1 <- "Gfral" # CHANGE
-gene2 <- "Tlr3" # CHANGE  
+gene2 <- "Slc6a15" # CHANGE  
 ```
 
 # Pairwise Co-expression values per cell type
@@ -201,10 +918,10 @@ co_expression_values
 
 
 # Scatter plot
-```{r}
+```{r, dev = svg}
 
 # Define clusters of interest
-clusters_of_interest <- c("Glu8","Glu5", "Glu4", "Glu1") # CHANGE
+clusters_of_interest <- c("Glu4", "Glu5") # CHANGE
 
 # Define genes of interest
 genes_of_interest <- genes
@@ -228,48 +945,88 @@ subset_data <- subset_data[subset_data$predicted_cell_type %in% clusters_of_inte
 subset_data_long <- pivot_longer(subset_data, cols = subset, names_to = "Gene", values_to = "Expression")
 
 # Create scatter plot
-g <- ggplot(subset_data, aes(x = Gfral, y = Tlr3, color = predicted_cell_type)) + # CHANGE
+g <- ggplot(subset_data, aes(x = gene1, y = gene2, color = predicted_cell_type)) + # CHANGE
   geom_point(alpha = 0.5) +
   facet_wrap(~predicted_cell_type) +
   theme_minimal() +
-  labs(title = "Gfral vs. Tlr3 Expression",  #CHANGE
+  labs(title = "Gfral vs. Slc6a15  Expression",  #CHANGE
        x = "Gfral Expression (logcounts)",  #CHANGE
-       y = "Tlr3 Expression (logcounts)") #CHANGE
+       y = "Slc6a15 Expression (logcounts)") #CHANGE
 g
 
-ggsave(here("img/GOIs_scatter_plots.png"), g, bg = 'white')
+ggsave(here("img/GOIs_scatter_plots_no_exp.svg"), g, bg = 'white')
+
+gene1 <- "Gfral"
+gene2 <- "Tlr3"
+
+clusters_of_interest <- c("Glu4", "Glu5")
+
+# Pull only the two genes you want (genes x cells) then transpose to cells x genes
+expr2 <- t(as.matrix(logcounts(sce)[c(gene1, gene2), ]))
+expr2 <- as.data.frame(expr2)
+
+# Add metadata
+expr2$predicted_cell_type <- colData(sce)$predicted_cell_type
+
+# Filter clusters
+expr2 <- expr2[expr2$predicted_cell_type %in% clusters_of_interest, , drop = FALSE]
+
+# Plot
+g <- ggplot(expr2, aes(x = .data[[gene1]], y = .data[[gene2]], color = predicted_cell_type)) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(~predicted_cell_type) +
+  theme_minimal() +
+  labs(
+    title = paste(gene1, "vs.", gene2, "Expression"),
+    x = paste(gene1, "Expression (logcounts)"),
+    y = paste(gene2, "Expression (logcounts)")
+  )
+
+g
+ggsave(here("img_new/GOIs_scatter_plots_etv1.pdf"), g, bg = "white")
+
 ```
 
 # Plot co-expression values for gene1/gene2 per cell type 
-```{r message=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE, dev = svg}
 # Extract gene2 correlation values from the gene1 row
-genes_values <- sapply(results, function(x) {
-  val <- x[gene1, gene2]
-  if (is.null(val)) NA else as.numeric(val)  # Convert NULLs to NA and ensure numeric
+# genes_values <- sapply(results, function(x) {
+#   val <- x[gene1, gene2]
+#   if (is.null(val)) NA else as.numeric(val)  # Convert NULLs to NA and ensure numeric
+# })
+# 
+# # Convert to a 1-row numeric matrix
+# genes_matrix <- matrix(genes_values, nrow = 1)
+# rownames(genes_matrix) <- "Gfral-Tl3r" #CHANGE
+# colnames(genes_matrix) <- names(results)
+
+genes_values <- sapply(results, function(mat) {
+  if (is.null(mat)) return(NA_real_)
+  if (!(gene1 %in% rownames(mat) && gene2 %in% colnames(mat))) return(NA_real_)
+  as.numeric(mat[gene1, gene2])
 })
 
-# Convert to a 1-row numeric matrix
 genes_matrix <- matrix(genes_values, nrow = 1)
-rownames(genes_matrix) <- "Gfral-Tl3r" #CHANGE
+rownames(genes_matrix) <- paste(gene1, gene2, sep = "-")
 colnames(genes_matrix) <- names(results)
 
 # Replace NA values with 0 or use na.color argument in pheatmap
 genes_matrix[is.na(genes_matrix)] <- 0  
+library(pheatmap)
 
-# Create heatmap
 p <- pheatmap(
   genes_matrix,
-  cluster_rows = FALSE,  # No need to cluster one row
-  cluster_cols = TRUE,   # Cluster cell types
-  color = colorRampPalette(c("blue", "white", "red"))(100),
-  main = "Gfral-Tlr3 Co-expression Across Cell Types", #CHANGE
-  na_col = "gray", 
+  cluster_rows = FALSE,
+  cluster_cols = TRUE,
+  main = paste(gene1, "-", gene2, "Co-expression Across Cell Types"),
+  na_col = "gray",
   angle_col = 45,
-  cellheight = 60
-  
+  cellheight = 40
 )
 
-ggsave(here("img/heatmap_cluster_coexp_tlr3.png"), p)
+p
+
+ggsave(here("img/heatmap_cluster_coexp_tlr3.svg"), p)
 ```
 
 # Print co-expression values for only one cluster
@@ -282,11 +1039,127 @@ ggsave(here("img/heatmap_cluster.png"),p_cluster)
 ```
 # Plot co-expression values for gene1/gene2 per cell type 
 ```{r message=FALSE, warning=FALSE}
+
+library(pheatmap)
+
+## 1. Define gene pairs
+gene_pairs <- list(
+  c("Gfral", "Tmtc2"),
+  c("Gfral", "Tlr3"),
+  c("Gfral", "Slc6a15"), 
+  c("Gfral", "Man1a"),
+  c("Gfral", "Akap13"),
+  c("Gfral", "Etv1")
+)
+
+pair_names <- sapply(gene_pairs, function(p) paste(p[1], p[2], sep = "-"))
+
+## 2. Choose which clusters to include
+##    If you really want ALL clusters, just use:
+clusters_to_use <- names(all_results)
+
+## If you only wanted Glu4 & Glu5, you could do:
+# clusters_to_use <- intersect(c("Glu4", "Glu5"), names(results))
+
+## 3. Build matrix: rows = gene pairs, cols = clusters
+genes_matrix <- do.call(rbind, lapply(gene_pairs, function(pair) {
+  vals <- sapply(all_results[clusters_to_use]$cor_goi, function(mat) {
+    # mat is one element of `results` (should be a correlation matrix or NULL)
+
+    # If scLink failed for that cell type:
+    if (is.null(mat)) return(NA_real_)
+
+    # Safety: check genes exist as row & col names
+    if (!all(pair %in% rownames(mat)) || !all(pair %in% colnames(mat))) {
+      return(NA_real_)
+    }
+
+    # Extract correlation
+    as.numeric(mat[pair[1], pair[2]])
+  })
+
+  # ensure numeric vector
+  as.numeric(vals)
+}))
+
+rownames(genes_matrix) <- pair_names
+colnames(genes_matrix) <- clusters_to_use
+
+## 4. (Optional) keep NA as NA so pheatmap can color them with na_col
+## If you *really* want to force them to 0, you can still do:
+# genes_matrix[is.na(genes_matrix)] <- 0
+
+## 5. Symmetric color scale
+max_val <- max(abs(genes_matrix), na.rm = TRUE)
+if (!is.finite(max_val) || max_val == 0) max_val <- 1  # fallback just in case
+breaks <- seq(-max_val, max_val, length.out = 100)
+
+## 6. Dynamic size
+n_rows <- nrow(genes_matrix)
+n_cols <- ncol(genes_matrix)
+
+genes_matrix[is.na(genes_matrix)] <- 0
+
+## 7. Draw heatmap
+p <- pheatmap(
+  genes_matrix,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = colorRampPalette(c("blue", "white", "red"))(length(breaks) - 1),
+  breaks = breaks,
+  main = "Gene Pair Co-expression Across Cell Types",
+  na_col = "gray",
+  angle_col = 45,
+  cellheight = 20,
+  cellwidth = 20,
+  fontsize = 10,
+)
+
+p
+
+pheatmap(
+  genes_matrix,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = colorRampPalette(c("blue", "white", "red"))(length(breaks) - 1),
+  breaks = breaks,
+  main = "Gene Pair Co-expression Across Cell Types",
+  fontsize = 10,
+  angle_col = 45,
+  cellheight = 20,
+  cellwidth = 20,
+  width = 12,
+  height = 4        
+)
+p
+
+
+png(
+  here("img/heatmap_cluster_coexp_multiple_genes_trimmed.png"),
+  width = 1600,
+  height = 500,
+  res = 150
+)
+
+grid.newpage()
+pushViewport(viewport(
+  x = 0.5, y = 0.5,
+  width = 0.98,
+  height = 0.65   # <-- trims top & bottom whitespace
+))
+grid.draw(p)
+dev.off()
+
+####
+
 # Define your gene pairs
 gene_pairs <- list(
+  c("Gfral", "Tmtc2"),
   c("Gfral", "Tlr3"),
-  c("Gfral", "Adcyap1"),
-  c("Gfral", "Dbh")
+  c("Gfral", "Slc6a15"), 
+  c("Gfral", "Man1a"),
+  c("Gfral", "Akap13"),
+  c("Gfral", "Etv1")
 )
 
 # Optional: give rownames for gene pairs (for the heatmap rows)
@@ -294,12 +1167,34 @@ pair_names <- sapply(gene_pairs, function(p) paste(p[1], p[2], sep = "-"))
 
 # Create matrix: rows = gene pairs, cols = cell types (length of results)
 genes_matrix <- do.call(rbind, lapply(gene_pairs, function(pair) {
-  vals <- sapply(results, function(x) {
+  vals <- sapply(all_results[[cluster]]$cor_goi, function(x) {
     val <- x[pair[1], pair[2]]
     if (is.null(val)) NA else as.numeric(val)
   })
   vals
 }))
+
+
+
+pair_names <- sapply(gene_pairs, function(p) paste(p[1], p[2], sep = "-"))
+
+# vector of correlations for Glu4
+vals <- sapply(gene_pairs, function(pair) {
+  if (!all(pair %in% rownames(results)) || !all(pair %in% colnames(results))) {
+    return(NA_real_)
+  }
+  as.numeric(mat[pair[1], pair[2]])
+})
+
+# make it a 6x1 matrix so pheatmap is happy
+genes_matrix <- matrix(
+  vals,
+  nrow = length(vals),
+  ncol = 1,
+  dimnames = list(pair_names, cluster)
+)
+
+genes_matrix
 
 # Set row and column names
 rownames(genes_matrix) <- pair_names
@@ -331,44 +1226,377 @@ pheatmap(
   cellheight = 20,
   cellwidth = 20,
   fontsize = 10,
-  filename = here("img/heatmap_cluster_coexp_multiple_genes_fullrange.png"),
+  filename = here("img_new/heatmap_cluster_coexp_multiple_genes_fullrange.png"),
   width = plot_width,
   height = plot_height
 )
 
-# Cap values to improve color contrast
-cap_value <- 0.1  # You can adjust this depending on your data spread
-genes_matrix_capped <- genes_matrix
-genes_matrix_capped[genes_matrix_capped > cap_value] <- cap_value
-genes_matrix_capped[genes_matrix_capped < -cap_value] <- -cap_value
-
-# Define color scale
-breaks <- seq(-cap_value, cap_value, length.out = 100)
-
-# Dynamically calculate plot size
-# Adjust these factors as needed for clarity
-n_rows <- nrow(genes_matrix_capped)
-n_cols <- ncol(genes_matrix_capped)
-plot_width <- 1 + 0.3 * n_cols + 1.5  # +1.5 for space for color bar
-plot_height <- 1 + 0.5 * n_rows
-
-# Create heatmap
-p <- pheatmap(
-  genes_matrix_capped,
-  cluster_rows = TRUE,
-  cluster_cols = TRUE,
-  color = colorRampPalette(c("blue", "white", "red"))(length(breaks) - 1),
-  breaks = breaks,
+# Save heatmap with enough width to fit color bar
+pheatmap(
+  genes_matrix,
   main = "Gene Pair Co-expression Across Cell Types",
   na_col = "gray",
   angle_col = 45,
   cellheight = 20,
   cellwidth = 20,
   fontsize = 10,
-  filename = here("img/heatmap_cluster_coexp_multiple_genes.png"),
+  filename = here("img/heatmap_cluster_coexp_multiple_genes_fullrange.png"),
   width = plot_width,
   height = plot_height
 )
 
+# # Cap values to improve color contrast
+# cap_value <- 0.1  # You can adjust this depending on your data spread
+# genes_matrix_capped <- genes_matrix
+# genes_matrix_capped[genes_matrix_capped > cap_value] <- cap_value
+# genes_matrix_capped[genes_matrix_capped < -cap_value] <- -cap_value
+# 
+# # Define color scale
+# breaks <- seq(-cap_value, cap_value, length.out = 100)
+# 
+# # Dynamically calculate plot size
+# # Adjust these factors as needed for clarity
+# n_rows <- nrow(genes_matrix_capped)
+# n_cols <- ncol(genes_matrix_capped)
+# plot_width <- 1 + 0.3 * n_cols + 1.5  # +1.5 for space for color bar
+# plot_height <- 1 + 0.5 * n_rows
+# 
+# # Create heatmap
+# p <- pheatmap(
+#   genes_matrix_capped,
+#   color = colorRampPalette(c("blue", "white", "red"))(length(breaks) - 1),
+#   breaks = breaks,
+#   main = "Gene Pair Co-expression Across Cell Types",
+#   na_col = "gray",
+#   angle_col = 45,
+#   cellheight = 20,
+#   cellwidth = 20,
+#   fontsize = 10,
+#   filename = here("img/heatmap_cluster_coexp_multiple_genes.tiff"),
+#   width = plot_width,
+#   height = plot_height
+# )
+# 
+# p
+# 
 
 ```
+
+```{r}
+# Required packages
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(stats)
+
+# Your gene list
+genes_sclink <- c(
+  "Gfral","Tmtc2","Slc6a15","Man1a","Akap13","Etv1",
+  "Pcdh9","Trpm3","Robo2","Kcnab1","Ncam2","Sntb1",
+  "Ctnnd2","Mpped2","Cntn4","Erbb4","Hs3st5","Fras1",
+  "Nxn","Hs3st2","Ralyl","Dmd","Meis1","Ptprd",
+  "Kcnmb2","Pde1c","Kcnj3","Spock1","Cntn6","Rora",
+  "Pbx3","Calb1","Slc2a13","Dcc","Oxr1","Astn2",
+  "Pcsk2","Msi2","Srrm4","Nrxn3","Dlc1"
+)
+
+# Genes of interest:
+goi <- "Gfral"
+test_gene <- "Tlr3"   # the gene you said is nearly absent
+
+# Basic presence counts
+counts <- LayerData(neuron_seurat, assay="RNA", layer="counts")
+stopifnot(goi %in% rownames(counts))
+stopifnot(test_gene %in% rownames(counts))
+
+expr_goi <- counts[goi, ] > 0
+expr_test <- counts[test_gene, ] > 0
+
+n_cells <- ncol(counts)
+n_goi <- sum(expr_goi)
+n_test <- sum(expr_test)
+n_both <- sum(expr_goi & expr_test)
+
+cat("Cells total:", n_cells, "\n")
+cat(sprintf("%s detected cells: %d (%.3f%%)\n", goi, n_goi, 100 * n_goi / n_cells))
+cat(sprintf("%s detected cells: %d (%.3f%%)\n", test_gene, n_test, 100 * n_test / n_cells))
+cat("Cells expressing BOTH:", n_both, "\n\n")
+
+# Contingency table and Fisher exact test
+tab <- matrix(c(
+  sum(expr_goi & expr_test),          # both
+  sum(expr_goi & (!expr_test)),       # goi only
+  sum((!expr_goi) & expr_test),       # test only
+  sum((!expr_goi) & (!expr_test))     # neither
+), nrow = 2, byrow = TRUE)
+rownames(tab) <- c("Gfral_pos","Gfral_neg")
+colnames(tab) <- c("Tlr3_pos","Tlr3_neg")
+print(tab)
+fisher_res <- fisher.test(tab, alternative = "two.sided")
+fisher_res
+
+# Hypergeometric test for overlap (if you want)
+# P(X >= n_both) where X ~ Hypergeom(N=n_cells, K=n_test, n=n_goi)
+phyper(n_both - 1, m = n_test, n = n_cells - n_test, k = n_goi, lower.tail = FALSE)
+
+# Permutation test for co-expression (preserve marginal detection rates)
+set.seed(123)
+nperm <- 5000
+obs <- n_both
+perm_vals <- numeric(nperm)
+for(i in seq_len(nperm)){
+  perm_test <- sample(expr_test)  # shuffle detection labels
+  perm_vals[i] <- sum(expr_goi & perm_test)
+}
+p_perm <- (sum(perm_vals >= obs) + 1) / (nperm + 1)
+cat("Permutation p-value (co-expression >= observed):", p_perm, "\n")
+
+# If counts exist, compute Spearman correlation across all cells and on cells where either gene is expressed
+spearman_all <- cor(counts[goi, ], counts[test_gene, ], method = "spearman")
+# Spearman only on cells where at least one detected (or both)
+sel_cells <- which((counts[goi, ] + counts[test_gene, ]) > 0)
+if(length(sel_cells) > 2){
+  spearman_sel <- cor(counts[goi, sel_cells], counts[test_gene, sel_cells], method = "spearman")
+} else {
+  spearman_sel <- NA
+}
+cat("Spearman (all cells):", spearman_all, "\n")
+cat("Spearman (cells with >=1 detection):", spearman_sel, "\n")
+
+# Pseudobulk by cluster: average expression per cluster and correlation
+if("seurat_clusters" %in% colnames(neuron_seurat@meta.data)){
+  meta <- neuron_seurat@meta.data
+  clust_means <- sapply(split(seq_len(n_cells), meta$seurat_clusters), function(idx){
+    rowMeans(counts[c(goi, test_gene), idx, drop = FALSE])
+  })
+  # clust_means will be 2 x nclusters
+  if(ncol(clust_means) >= 2){
+    cor_pseudobulk <- cor(clust_means[1, ], clust_means[2, ], method = "spearman")
+    cat("Pseudobulk Spearman across clusters:", cor_pseudobulk, "\n")
+  } else cat("Not enough clusters for pseudobulk correlation\n")
+} else cat("No seurat_clusters metadata found; skip pseudobulk\n")
+
+# Visualization: UMAP highlighting cells expressing each gene
+# (Assumes seu has reducedDims "umap")
+if("umap" %in% names(neuron_seurat@reductions)){
+  umap_df <- as.data.frame(Embeddings(neuron_seurat, "umap"))
+  umap_df$Gfral_expr <- counts[goi, ] > 0
+  umap_df$Tlr3_expr <- counts[test_gene, ] > 0
+  p1 <- ggplot(umap_df, aes(x = umap_1, y = umap_2)) +
+    geom_point(aes(color = Gfral_expr), size = 0.5) + ggtitle("Gfral detection")
+  p2 <- ggplot(umap_df, aes(x = umap_1, y = umap_2)) +
+    geom_point(aes(color = Tlr3_expr), size = 0.5) + ggtitle("Tlr3 detection")
+  print(p1); print(p2)
+} else cat("No UMAP reduction named 'umap' found; skip UMAP plots\n")
+
+# Violin/feature plots for both genes
+f <- FeaturePlot(neuron_seurat, features = c(goi, test_gene), cols = c("lightgrey","blue"), ncol = 2)
+
+v <- Seurat::VlnPlot(
+  neuron_seurat,
+  features = c(goi, test_gene),
+  ncol = 2,
+  pt.size = 0.1
+) & theme(
+  axis.text.x = element_text(size = 8)
+)
+
+pdf(here("img_new/feature_plots.png"), width = 8, height = 8)
+print(f)
+dev.off()
+
+pdf(here("img_new/umap_plots.png"), width = 8, height = 8)
+print(p1)
+print(p2)
+dev.off()
+
+pdf(here("img_new/violin_plots.png"), width = 8, height = 8)
+print(v)
+dev.off()
+
+
+```
+
+```{r}
+library(pheatmap)
+
+gene_pairs <- list(
+  c("Gfral", "Tmtc2"),
+  c("Gfral", "Tlr3"),
+  c("Gfral", "Slc6a15"),
+  c("Gfral", "Man1a"),
+  c("Gfral", "Akap13"),
+  c("Gfral", "Etv1")
+)
+pair_names <- vapply(gene_pairs, function(p) paste(p[1], p[2], sep="-"), character(1))
+
+clusters_to_use <- names(all_results)
+cor_mats <- lapply(all_results[clusters_to_use], function(x) x$cor_goi)
+
+get_pair_cor <- function(mat, g1, g2) {
+  if (is.null(mat) || !is.matrix(mat)) return(NA_real_)
+  rn <- rownames(mat); cn <- colnames(mat)
+  if (is.null(rn) || is.null(cn)) return(NA_real_)
+  if (g1 %in% rn && g2 %in% cn) return(as.numeric(mat[g1, g2]))
+  if (g2 %in% rn && g1 %in% cn) return(as.numeric(mat[g2, g1]))
+  NA_real_
+}
+
+genes_matrix <- do.call(rbind, lapply(gene_pairs, function(pair) {
+  vapply(cor_mats, function(mat) get_pair_cor(mat, pair[1], pair[2]), numeric(1))
+}))
+rownames(genes_matrix) <- pair_names
+colnames(genes_matrix) <- names(cor_mats)
+
+mat_plot <- genes_matrix                      # keeps NA for display
+mat_clust <- genes_matrix
+mat_clust[is.na(mat_clust)] <- 0              # only for clustering distances
+
+# Row/col clustering objects from the imputed matrix
+row_hc <- hclust(dist(mat_clust))
+col_hc <- hclust(dist(t(mat_clust)))
+
+# Symmetric color scale from observed values
+max_val <- max(abs(mat_plot), na.rm = TRUE)
+if (!is.finite(max_val) || max_val == 0) max_val <- 1
+breaks <- seq(-max_val, max_val, length.out = 101)
+
+pheatmap(
+  mat_plot,
+  cluster_rows = row_hc,
+  cluster_cols = col_hc,
+  color = colorRampPalette(c("blue","white","red"))(length(breaks) - 1),
+  breaks = breaks,
+  na_col = "gray",
+  main = "Gfral pairwise correlation across cell types",
+  angle_col = 45,
+  filename=here("img_new/heatmap_all_celltypes_NAs.pdf")
+)
+
+
+```
+
+```{r}
+
+library(Seurat)
+library(Matrix)
+
+goi <- "Gfral"
+low_genes <- c("Tlr3","Gm9732", "4930503E14Rik", "Nts", "Crhr2")
+
+# helper: run overlap tests for one gene, on a Seurat object (already subset if you want)
+coexpr_tests <- function(seu, goi, test_gene, assay="RNA", layer="counts",
+                         nperm=5000, seed=123) {
+
+  counts <- LayerData(seu, assay = assay, layer = layer)
+
+  if(!(goi %in% rownames(counts))) stop(paste("Missing goi:", goi))
+  if(!(test_gene %in% rownames(counts))) stop(paste("Missing test gene:", test_gene))
+
+  expr_goi  <- counts[goi, ] > 0
+  expr_test <- counts[test_gene, ] > 0
+
+  n_cells <- ncol(counts)
+  n_goi   <- sum(expr_goi)
+  n_test  <- sum(expr_test)
+  n_both  <- sum(expr_goi & expr_test)
+
+  # expected overlap under independence
+  exp_both <- (n_goi * n_test) / n_cells
+
+  # 2x2 table
+  tab <- matrix(c(
+    sum(expr_goi & expr_test),          # both
+    sum(expr_goi & (!expr_test)),       # goi only
+    sum((!expr_goi) & expr_test),       # test only
+    sum((!expr_goi) & (!expr_test))     # neither
+  ), nrow = 2, byrow = TRUE)
+  rownames(tab) <- c("Gfral_pos","Gfral_neg")
+  colnames(tab) <- c(paste0(test_gene,"_pos"), paste0(test_gene,"_neg"))
+
+  fisher_res <- fisher.test(tab, alternative = "two.sided")
+
+  # Hypergeometric: P(X >= observed)
+  p_hyper <- phyper(n_both - 1, m = n_test, n = n_cells - n_test, k = n_goi, lower.tail = FALSE)
+
+  # Permutation test (shuffle test labels, preserve marginal detection)
+  set.seed(seed)
+  perm_vals <- replicate(nperm, {
+    perm_test <- sample(expr_test)
+    sum(expr_goi & perm_test)
+  })
+  p_perm <- (sum(perm_vals >= n_both) + 1) / (nperm + 1)
+
+  data.frame(
+    test_gene = test_gene,
+    n_cells = n_cells,
+    goi_detected = n_goi,
+    test_detected = n_test,
+    both_detected = n_both,
+    expected_both = exp_both,
+    det_frac_goi = n_goi / n_cells,
+    det_frac_test = n_test / n_cells,
+    fisher_p = fisher_res$p.value,
+    fisher_or = unname(fisher_res$estimate),
+    fisher_ci_low = fisher_res$conf.int[1],
+    fisher_ci_high = fisher_res$conf.int[2],
+    p_hyper = p_hyper,
+    p_perm = p_perm
+  )
+}
+
+# --------- Run globally (all neurons in neuron_seurat) ----------
+res_all <- do.call(rbind, lapply(low_genes, function(g){
+  coexpr_tests(neuron_seurat, goi=goi, test_gene=g)
+}))
+res_all[order(res_all$det_frac_test), ]
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+
+df <- res_all %>%
+  filter(test_gene %in% c("Gm9732", "4930503E14Rik","Tlr3", "Crhr2", "Nts")) %>%
+  mutate(
+    test_gene = factor(test_gene, levels = c("Gm9732", "4930503E14Rik","Tlr3", "Crhr2", "Nts")),
+    enrichment = both_detected / expected_both
+  )
+
+# -------- Panel A: Detection rates --------
+pA <- ggplot(df, aes(x = test_gene, y = det_frac_test)) +
+  geom_col(width = 0.6, fill = "grey30") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.01)) +
+  labs(
+    x = "",
+    y = "Detection fraction",
+    title = "Lowly expressed genes"
+  ) +
+  theme_classic(base_size = 12) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+# -------- Panel B: Enrichment (observed / expected) --------
+pB <- ggplot(df, aes(x = test_gene, y = enrichment)) +
+  geom_col(width = 0.6, fill = "grey30") +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  scale_y_log10() +
+  labs(
+    x = "",
+    y = "Observed / expected overlap\n(log scale)",
+    title = "Co-detection with Gfral"
+  ) +
+  theme_classic(base_size = 12) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+# -------- Combine --------
+pA + pB
+pdf(here("img_new/lowly_expressed_genes_1.pdf"), width = 8, height = 8)
+print(pA)
+dev.off()
+
+pdf(here("img_new/lowly_expressed_genes_2.pdf"), width = 8, height = 8)
+print(pB)
+dev.off()
+
+``` 
