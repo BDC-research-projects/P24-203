@@ -128,16 +128,16 @@ Outputs
 # Software environment
 
 ## Tool versions
-R version and package versions: see sessionInfo()
-SRA Toolkit: 3.1.0
-CELLRANGER: 8.0.0
-fastqc: 0.12.1
-gunzip: 1.1
-nf-core/scrnaseq: v2.7.1-g4171377
-Nextflow: 24.10.2
+- R version and package versions: see sessionInfo()
+- SRA Toolkit: 3.1.0
+- CELLRANGER: 8.0.0
+- fastqc: 0.12.1
+- gunzip: 1.1
+- nf-core/scrnaseq: v2.7.1-g4171377
+- Nextflow: 24.10.2
 
 ## Operating system
-NAME="Red Hat Enterprise Linux"
-VERSION="8.10 (Ootpa)"
-ID="rhel"
-ID_LIKE="fedora"
+- NAME="Red Hat Enterprise Linux"
+- VERSION="8.10 (Ootpa)"
+- ID="rhel"
+- ID_LIKE="fedora"
