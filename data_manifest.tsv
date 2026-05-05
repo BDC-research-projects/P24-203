@@ -1,0 +1,89 @@
+stage	sample_id	run_accession	source	file_type	location	generated_by	description	expected_cells	checksum
+raw	6V	SRR13694200	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	6V	SRR13694201	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	6V	SRR13694202	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	6V	SRR13694203	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	9V	SRR13694204	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	9V	SRR13694205	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	14V	SRR13694206	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	14V	SRR13694207	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	21V	SRR13694208	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	21V	SRR13694209	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	21V	SRR13694210	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	21V	SRR13694211	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	23V	SRR13694212	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	23V	SRR13694213	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	25V	SRR13694214	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	25V	SRR13694215	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	19S	SRR13694216	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	19S	SRR13694217	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	19S	SRR13694218	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	19S	SRR13694219	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	22S	SRR13694220	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	22S	SRR13694221	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	22S	SRR13694222	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	22S	SRR13694223	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	26S	SRR13694224	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	26S	SRR13694225	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	31S	SRR13694226	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	31S	SRR13694227	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	36S	SRR13694228	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	36S	SRR13694229	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	39S	SRR13694230	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	39S	SRR13694231	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	40S	SRR13694232	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	40S	SRR13694233	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	7W	SRR13694234	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	7W	SRR13694235	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	12W	SRR13694236	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	12W	SRR13694237	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	12W	SRR13694238	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	12W	SRR13694239	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	16W	SRR13694240	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	16W	SRR13694241	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	20W	SRR13694242	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	20W	SRR13694243	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	27W	SRR13694244	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	27W	SRR13694245	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	34W	SRR13694246	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	34W	SRR13694247	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	37W	SRR13694248	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	37W	SRR13694249	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	9000	TBD
+raw	TBD	SRR19661755	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	TBD	TBD
+raw	TBD	SRR19661756	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	TBD	TBD
+raw	TBD	SRR19661757	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	TBD	TBD
+raw	TBD	SRR19661758	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	TBD	TBD
+raw	TBD	SRR19661759	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	TBD	TBD
+raw	SRR19661760	SRR19661760	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	TBD	TBD
+raw	SRR19661761	SRR19661761	SRA	FASTQ	data/fastq/	run_fasterq_dump.sh	Raw paired-end FASTQ files	TBD	TBD
+processed	6V	SRR13694200-SRR13694203	nf-core/cellranger	filtered_feature_bc_matrix	data/count/6V/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 6V	9000	TBD
+processed	9V	SRR13694204-SRR13694205	nf-core/cellranger	filtered_feature_bc_matrix	data/count/9V/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 9V	9000	TBD
+processed	14V	SRR13694206-SRR13694207	nf-core/cellranger	filtered_feature_bc_matrix	data/count/14V/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 14V	9000	TBD
+processed	21V	SRR13694208-SRR13694211	nf-core/cellranger	filtered_feature_bc_matrix	data/count/21V/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 21V	9000	TBD
+processed	23V	SRR13694212-SRR13694213	nf-core/cellranger	filtered_feature_bc_matrix	data/count/23V/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 23V	9000	TBD
+processed	25V	SRR13694214-SRR13694215	nf-core/cellranger	filtered_feature_bc_matrix	data/count/25V/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 25V	9000	TBD
+processed	19S	SRR13694216-SRR13694219	nf-core/cellranger	filtered_feature_bc_matrix	data/count/19S/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 19S	9000	TBD
+processed	22S	SRR13694220-SRR13694223	nf-core/cellranger	filtered_feature_bc_matrix	data/count/22S/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 22S	9000	TBD
+processed	26S	SRR13694224-SRR13694225	nf-core/cellranger	filtered_feature_bc_matrix	data/count/26S/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 26S	9000	TBD
+processed	31S	SRR13694226-SRR13694227	nf-core/cellranger	filtered_feature_bc_matrix	data/count/31S/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 31S	9000	TBD
+processed	36S	SRR13694228-SRR13694229	nf-core/cellranger	filtered_feature_bc_matrix	data/count/36S/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 36S	9000	TBD
+processed	39S	SRR13694230-SRR13694231	nf-core/cellranger	filtered_feature_bc_matrix	data/count/39S/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 39S	9000	TBD
+processed	40S	SRR13694232-SRR13694233	nf-core/cellranger	filtered_feature_bc_matrix	data/count/40S/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 40S	9000	TBD
+processed	7W	SRR13694234-SRR13694235	nf-core/cellranger	filtered_feature_bc_matrix	data/count/7W/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 7W	9000	TBD
+processed	12W	SRR13694236-SRR13694239	nf-core/cellranger	filtered_feature_bc_matrix	data/count/12W/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 12W	9000	TBD
+processed	16W	SRR13694240-SRR13694241	nf-core/cellranger	filtered_feature_bc_matrix	data/count/16W/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 16W	9000	TBD
+processed	20W	SRR13694242-SRR13694243	nf-core/cellranger	filtered_feature_bc_matrix	data/count/20W/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 20W	9000	TBD
+processed	27W	SRR13694244-SRR13694245	nf-core/cellranger	filtered_feature_bc_matrix	data/count/27W/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 27W	9000	TBD
+processed	34W	SRR13694246-SRR13694247	nf-core/cellranger	filtered_feature_bc_matrix	data/count/34W/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 34W	9000	TBD
+processed	37W	SRR13694248-SRR13694249	nf-core/cellranger	filtered_feature_bc_matrix	data/count/37W/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for sample 37W	9000	TBD
+processed	SRR19661760	SRR19661760	nf-core/cellranger	filtered_feature_bc_matrix	data/count/SRR19661760/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for SRR19661760	TBD	TBD
+processed	SRR19661761	SRR19661761	nf-core/cellranger	filtered_feature_bc_matrix	data/count/SRR19661761/	nf-core/scrnaseq v2.7.1 + Cell Ranger v8.0.0	Cell Ranger count matrix for SRR19661761	TBD	TBD
+reference	GRCm39	Ensembl/Cell Ranger	GTF	data/cellranger/mkgtf/GRCm39.primary_assembly.genome_genes.filtered.gtf	nf-core/scrnaseq	Filtered GTF used for Cell Ranger reference generation	NA	TBD
+reference	cellranger_reference	Cell Ranger	reference genome	data/cellranger/mkref/cellranger_reference/	nf-core/scrnaseq	Cell Ranger reference generated from GRCm39	NA	TBD
+pipeline_metadata	nf-core_versions	nf-core	YAML	data/cellranger/versions.yml	nf-core/scrnaseq	Software versions from nf-core run	NA	TBD
+pipeline_metadata	mkref_versions	nf-core	YAML	data/cellranger/mkref/versions.yml	nf-core/scrnaseq	Reference-building software versions	NA	TBD
+pipeline_metadata	mtx_versions	nf-core	YAML	data/cellranger/mtx_conversions/versions.yml	nf-core/scrnaseq	Matrix conversion software versions	NA	TBD
+analysis_input	metadata	TBD	CSV	data/csv/	manual or script-generated	Metadata and annotation files used by R notebooks	NA	TBD
+analysis_output	neurons	TBD	CSV	data/csv/neurons/	snRNA-seq_integration.Rmd and snRNA_coexpression.Rmd	Neuronal subset outputs and GOI co-expression results	NA	TBD
+analysis_output	non_neurons	TBD	CSV	data/csv/non_neurons/	snRNA-seq_integration.Rmd and snRNA_coexpression.Rmd	Non-neuronal subset outputs and GOI co-expression results	NA	TBD
+figures	figures	TBD	PNG/PDF/SVG	img/	snRNA-seq_integration.Rmd and snRNA_coexpression.Rmd	Figures and visual outputs	NA	TBD
