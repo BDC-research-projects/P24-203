@@ -2,10 +2,8 @@
 
 
 #$ -N get_fastq
-#$ -q development.q
 #$ -cwd
 #$ -o get_fastq.out -e get_fastq.err
-#$ -M kristina.benevides@gu.se
 #$ -m bea
 #$ -pe mpi 8
 
