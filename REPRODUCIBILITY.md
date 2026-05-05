@@ -79,7 +79,7 @@ nextflow run nf-core/scrnaseq -r 2.7.1 -profile your_profile,singularity -resume
 
 Run scripts/snRNA-seq_integration.Rmd
 
-This script performs:
+## This script performs:
 
 - Quality control and filtering
 - Ambient RNA removal (e.g. SoupX)
@@ -91,12 +91,12 @@ This script performs:
 - Cell-type annotation
 - Visualisation
 
-Inputs
+### Inputs
 - Count matrices from data/count/
 - Metadata and reference files from data/csv/
 - AP/NTS marker genes from doc/
 
-Outputs
+### Outputs
 - Data objects → data/
 - Non-neuronal subset outputs → data/marker_genes/
 - Neuronal subset outputs → data/neuron_marker_genes/
@@ -106,7 +106,7 @@ Outputs
 
 Run scripts/snRNA_coexpression.Rmd
 
-This script performs:
+## This script performs:
 
 - Selection of genes of interest (GOIs)
 - Co-expression network construction (e.g. scLink)
@@ -114,10 +114,10 @@ This script performs:
 - Statistical testing
 - Visualisation of co-expression patterns
 
-Inputs
+### Inputs
 - Processed data generated in Step 3
 
-Outputs
+### Outputs
 - Figures → img/
 
 # Notes on reproducibility
