@@ -77,7 +77,7 @@ nextflow run nf-core/scrnaseq -r 2.7.1 -profile your_profile,singularity -resume
 
 # Step 3: snRNA-seq integration and downstream analysis
 
-Run `scripts/snRNA-seq_integration.Rmd`
+Run `scripts/snRNA_integration.Rmd`
 
 ## This script performs:
 
@@ -104,7 +104,7 @@ Run `scripts/snRNA-seq_integration.Rmd`
 
 # Step 4: Co-expression analysis and visualisation
 
-Run `scripts/snRNA_coexpression.Rmd`
+Run `scripts/snRNA_plot_coexpression.Rmd`
 
 ## This script performs:
 
