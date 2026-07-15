@@ -49,10 +49,10 @@ po/*~
 rsconnect/
 
 # Data 
-data/
-data
 img
 img/
+data/fastq/
+data/count/
 data_new/
 img_new/
 
