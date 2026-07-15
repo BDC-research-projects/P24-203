@@ -55,3 +55,6 @@ img
 img/
 data_new/
 img_new/
+
+# macOS
+.DS_Store

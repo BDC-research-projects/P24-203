@@ -18,19 +18,29 @@ The analysis was performed in the following order:
 4. Perform co-expression analysis, visualisation and statistical tests  
    → `scripts/snRNA_coexpression.Rmd`
 
-## Required input data
+## Installation guide 
 
-See `data_manifest.tsv` for dataset accessions, expected files, and checksums.
+### Required input data
 
-## Expected directory structure
+See `data_manifest.tsv` for dataset accessions and expected files.
+
+### Clone the repository 
+
+```
+git clone https://github.com/BDC-research-projects/P24-203.git
+```
+
+### Expected directory structure
 
 ```
 P24-203/
 ├── data/
+│   ├── fastq/
 │   ├── count/
 │   ├── csv/
 │   │	├── neurons/
 │   │	├── non_neurons/  
+│
 ├── doc/
 ├── img/
 └── scripts/
@@ -42,22 +52,29 @@ P24-203/
 bash scripts/run_fasterq_dump_parallel.sh <SRR_FILE> <OUTPUT_DIR> <NUM_THREADS> <SINGULARITY>
 ```
 
+SRR files can be found in `doc` and the singularity container can be built using command
+
+```
+apptainer build sratoolkit_3.1.0.sif docker://pegi3s/sratoolkit:3.1.0
+``` 
+
 # Step 2: Pre-processing using nf-core/scrnaseq
 
 ## Example samplesheet
 ```
 sample,fastq_1,fastq_2,expected_cells
-6V,data/fastq/SRR13694200_R1.fastq.gz,data/fastq/SRR13694200_R2.fastq.gz,9000
-6V,data/fastq/SRR13694201_R1.fastq.gz,data/fastq/SRR13694201_R2.fastq.gz,9000
-6V,data/fastq/SRR13694202_R1.fastq.gz,data/fastq/SRR13694202_R2.fastq.gz,9000
-6V,data/fastq/SRR13694203_R1.fastq.gz,data/fastq/SRR13694203_R2.fastq.gz,9000
-9V,data/fastq/SRR13694204_R1.fastq.gz,data/fastq/SRR13694204_R2.fastq.gz,9000
-9V,data/fastq/SRR13694205_R1.fastq.gz,data/fastq/SRR13694205_R2.fastq.gz,9000
-14V,data/fastq/SRR13694206_R1.fastq.gz,data/fastq/SRR13694206_R2.fastq.gz,9000
-14V,data/fastq/SRR13694207_R1.fastq.gz,data/fastq/SRR13694207_R2.fastq.gz,9000
+6V,data/fastq/SRR13694200_R1.fastq.gz,data/fastq/SRR13694200_R2.fastq.gz,4500
+6V,data/fastq/SRR13694201_R1.fastq.gz,data/fastq/SRR13694201_R2.fastq.gz,4500
+6V,data/fastq/SRR13694202_R1.fastq.gz,data/fastq/SRR13694202_R2.fastq.gz,4500
+6V,data/fastq/SRR13694203_R1.fastq.gz,data/fastq/SRR13694203_R2.fastq.gz,4500
+9V,data/fastq/SRR13694204_R1.fastq.gz,data/fastq/SRR13694204_R2.fastq.gz,4500
+9V,data/fastq/SRR13694205_R1.fastq.gz,data/fastq/SRR13694205_R2.fastq.gz,4500
+14V,data/fastq/SRR13694206_R1.fastq.gz,data/fastq/SRR13694206_R2.fastq.gz,4500
+14V,data/fastq/SRR13694207_R1.fastq.gz,data/fastq/SRR13694207_R2.fastq.gz,4500
 ...
 ```
 ## Example nf-params.json 
+
 ```
 {
     "input": "samplesheet.csv",
@@ -69,6 +86,9 @@ sample,fastq_1,fastq_2,expected_cells
     "protocol": "10XV2"
 }
 ```
+
+The reference files can be downloaded from https://www.gencodegenes.org/mouse/release_M28.html
+
 ## Example command
 
 ```
@@ -127,14 +147,35 @@ Run `scripts/snRNA_plot_coexpression.Rmd`
 
 # Software environment
 
-## Tool versions
-- R version and package versions: see sessionInfo()
+## Tool and package versions
 - SRA Toolkit: 3.1.0
 - CELLRANGER: 8.0.0
 - fastqc: 0.12.1
 - gunzip: 1.1
 - nf-core/scrnaseq: v2.7.1-g4171377
 - Nextflow: 24.10.2
+- R: 4.4.0
+- Bioconductor: 3.19
+- Seurat: 5.1.0
+- SeuratObject: 5.0.2
+- SoupX: 1.6.2
+- scran: 1.32.0
+- scuttle: 1.14.0
+- Polychrome: 1.5.1
+- readr: 2.1.5
+- scLink: 1.0.1
+- SAVER: 1.1.2
+- reshape2: 1.4.4
+- rlang: 1.1.4
+- ggplot2: 3.5.1
+- harmony: 1.2.2
+- patchwork: 1.2.0
+- cowplot: 1.1.3
+- foreach: 1.5.2
+- doParallel: 1.0.17
+- GSEABase: 1.66.0
+- AUCell: 1.26.0
+- here: 1.0.1
 
 ## Operating system
 - NAME="Red Hat Enterprise Linux"
